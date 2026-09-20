@@ -73,6 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run flet build apk \
+            --module-name src.main \
             --split-per-abi \
             --arch arm64-v8a \
             --source-packages ../../src/flutter/flet_media_library \
