@@ -112,18 +112,37 @@ jobs:
           print(f"Using local wheel: {wheel_uri}")
           PY
 
+      # Confirm the wheel ships flutter/flet_media_library/lib/flet_media_library.dart
+      # so flet build can resolve the Flutter plugin from the installed package.
+      - name: Verify wheel contains Flutter plugin
+        run: |
+          set -euo pipefail
+          WHEEL="$(find "$RUNNER_TEMP/flet-media-library-wheel" \
+            -maxdepth 1 -type f -name 'flet_media_library-*.whl' | head -n 1)"
+          test -n "$WHEEL"
+          echo "Wheel: $WHEEL"
+          unzip -l "$WHEEL" | grep -E \
+            'flutter/flet_media_library/(pubspec\.yaml|lib/flet_media_library\.dart)'
+          echo "OK: Flutter plugin files confirmed in wheel"
+
       # Accept Android SDK licenses non-interactively (required on fresh runners).
       - name: Accept Android licenses
         run: yes | flutter doctor --android-licenses || true
 
-      # Verify entry point exists before handing off to flet build.
-      - name: Check demo entry point
+      # Verify entry point and Flutter plugin source before handing off to flet build.
+      - name: Check demo entry point and Flutter plugin
         working-directory: examples/media_library_demo
         run: |
           echo "--- directory layout (depth 3) ---"
           find . -maxdepth 3 -not -path './.venv/*' -type f | sort
           echo "--- checking main.py ---"
           test -f main.py && echo "OK: main.py found" || (echo "MISSING: main.py" && exit 1)
+          echo "--- checking Flutter plugin dart file ---"
+          test -f ../../src/flutter/flet_media_library/lib/flet_media_library.dart \
+            && echo "OK: flet_media_library.dart found" \
+            || (echo "MISSING: flet_media_library.dart" && exit 1)
+          echo "Flutter plugin contents:"
+          find ../../src/flutter/flet_media_library -maxdepth 3 -type f -print
 
       # No ANDROID_KEYSTORE_* secrets — unsigned/debug-style APK for sideload
       # testing only. Not for Play Store.
@@ -133,11 +152,14 @@ jobs:
         working-directory: examples/media_library_demo
         run: |
           set -euo pipefail
+          # No --source-packages: the wheel already ships flutter/flet_media_library/
+          # in the correct namespace package layout that flet build expects.
+          # Passing the raw Flutter dir as --source-packages caused:
+          #   "No such file or directory: flutter-packages/flet_media_library/lib/flet_media_library.dart"
           uv run --no-sync flet build apk \
             --module-name main \
             --split-per-abi \
             --arch arm64-v8a \
-            --source-packages ../../src/flutter/flet_media_library \
             --yes \
             --verbose
 
