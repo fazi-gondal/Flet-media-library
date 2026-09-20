@@ -65,15 +65,24 @@ jobs:
       - name: Accept Android licenses
         run: yes | flutter doctor --android-licenses || true
 
+      # Verify entry point exists before handing off to flet build.
+      - name: Check demo entry point
+        working-directory: examples/media_library_demo
+        run: |
+          echo "--- directory layout (depth 3) ---"
+          find . -maxdepth 3 -not -path './.venv/*' -type f | sort
+          echo "--- checking main.py ---"
+          test -f main.py && echo "OK: main.py found" || (echo "MISSING: main.py" && exit 1)
+
       # No ANDROID_KEYSTORE_* secrets — unsigned/debug-style APK for sideload
       # testing only. Not for Play Store.
-      # module_name (src.main) is declared in pyproject.toml [tool.flet].
+      # Entry point: main.py at demo root (shim → src/main.py).
       - name: Build Android APK
         working-directory: examples/media_library_demo
         run: |
           set -euo pipefail
           uv run flet build apk \
-            --module-name src.main \
+            --module-name main \
             --split-per-abi \
             --arch arm64-v8a \
             --source-packages ../../src/flutter/flet_media_library \

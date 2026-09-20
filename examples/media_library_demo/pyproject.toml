@@ -19,7 +19,7 @@ flet-media-library = { path = "../../", editable = true }
 org = "com.gondal"
 product = "Media Library Demo"
 company = "Fazi Gondal"
-module_name = "src.main"
+module_name = "main"
 
 [tool.flet.android]
 # Merged with package permissions from flet-media-library
