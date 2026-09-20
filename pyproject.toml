@@ -1,0 +1,99 @@
+[project]
+name = "flet-media-library"
+version = "0.1.0"
+description = "Flet service extension for device media library access (photos, videos, audio) on Android and iOS — albums, assets, thumbnails, permissions, save/delete, and change notifications via photo_manager."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Fazi Gondal", email = "nextinpk@gmail.com" },
+]
+maintainers = [
+    { name = "Fazi Gondal", email = "nextinpk@gmail.com" },
+]
+keywords = [
+    "flet",
+    "flet-extension",
+    "media",
+    "gallery",
+    "photo",
+    "video",
+    "audio",
+    "album",
+    "android",
+    "ios",
+    "mediastore",
+    "photokit",
+    "photo-manager",
+    "flutter",
+    "permissions",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Android",
+    "Operating System :: iOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "flet>=0.86.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/fazi-gondal/Flet-media-library"
+Documentation = "https://github.com/fazi-gondal/Flet-media-library#readme"
+Repository = "https://github.com/fazi-gondal/Flet-media-library"
+Issues = "https://github.com/fazi-gondal/Flet-media-library/issues"
+Changelog = "https://github.com/fazi-gondal/Flet-media-library/blob/main/CHANGELOG.md"
+"PyPI" = "https://pypi.org/project/flet-media-library/"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+license-files = ["LICENSE"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["flet_media_library*", "flutter*"]
+namespaces = true
+
+# Ship the Flutter plugin with the wheel so `flet build` can resolve it.
+[tool.setuptools.package-data]
+"flutter.flet_media_library" = [
+    "pubspec.yaml",
+    "**/*.dart",
+    "**/*.kt",
+    "**/*.kts",
+    "**/*.xml",
+    "**/*.gradle",
+    "**/*.swift",
+    "**/*.podspec",
+    "**/*.md",
+    "**/.gitignore",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "build>=1.2.0",
+    "twine>=5.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

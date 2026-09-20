@@ -1,0 +1,159 @@
+# Adapted from Vidsaver's all-builds.yml (unsigned APK only).
+# Builds the media_library_demo app so you can sideload-test flet-media-library.
+# On version tags (v*), also publishes a GitHub Release with:
+#   - MediaLibraryDemo-<tag>-Android-arm64-v8a.apk
+#   - MediaLibraryDemo-<tag>-Android-arm64-v8a.zip  (zip -9 full compression)
+# docs: https://docs.flet.dev/publish/#github-actions
+
+name: Build Demo APK (unsigned)
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+    paths:
+      - "src/**"
+      - "examples/media_library_demo/**"
+      - ".github/workflows/build-demo-apk.yml"
+      - "pyproject.toml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "examples/media_library_demo/**"
+      - ".github/workflows/build-demo-apk.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_PYTHON: "3.12"
+  PYTHONUTF8: "1"
+  FLET_CLI_NO_RICH_OUTPUT: "1"
+
+jobs:
+  build-apk:
+    name: Build demo APK (arm64-v8a, unsigned)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            examples/media_library_demo/pyproject.toml
+            src/flet_media_library/**/*.py
+            src/flutter/flet_media_library/lib/**/*.dart
+            src/flutter/flet_media_library/android/**/*
+            src/flutter/flet_media_library/pubspec.yaml
+
+      - name: Install demo dependencies
+        working-directory: examples/media_library_demo
+        run: uv sync
+
+      # No ANDROID_KEYSTORE_* secrets — unsigned/debug-style APK for sideload
+      # testing only. Not for Play Store.
+      - name: Build Android APK
+        working-directory: examples/media_library_demo
+        run: |
+          set -euo pipefail
+          uv run flet build apk \
+            --split-per-abi \
+            --arch arm64-v8a \
+            --source-packages ../../src/flutter/flet_media_library \
+            --permissions camera microphone \
+            --yes \
+            --verbose
+
+      - name: Verify APK output
+        working-directory: examples/media_library_demo
+        run: |
+          set -euo pipefail
+          ls -R build/apk || true
+          APK="$(find build/apk -type f -name '*arm64-v8a*.apk' 2>/dev/null | head -n 1)"
+          if [ -z "${APK}" ]; then
+            APK="$(find build/apk -type f -name '*.apk' 2>/dev/null | head -n 1)"
+          fi
+          if [ -z "${APK}" ]; then
+            echo "No APK found under build/apk" >&2
+            find build -type f -name '*.apk' -print >&2 || true
+            exit 1
+          fi
+          echo "Found APK: ${APK}"
+          ls -lh "${APK}"
+
+      - name: Stage release assets (APK + zip -9)
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          # Resolve APK path robustly
+          APK="$(find examples/media_library_demo/build/apk -type f -name '*arm64-v8a*.apk' 2>/dev/null | head -n 1)"
+          if [ -z "${APK}" ]; then
+            APK="$(find examples/media_library_demo/build/apk -type f -name '*.apk' 2>/dev/null | head -n 1)"
+          fi
+          test -n "${APK}" && test -f "${APK}"
+
+          VERSION="${GITHUB_REF_NAME}"
+          if [[ "${VERSION}" != v* ]]; then
+            VERSION="dev-${GITHUB_SHA::7}"
+          fi
+
+          APK_NAME="MediaLibraryDemo-${VERSION}-Android-arm64-v8a.apk"
+          ZIP_NAME="MediaLibraryDemo-${VERSION}-Android-arm64-v8a.zip"
+
+          cp "${APK}" "release-assets/${APK_NAME}"
+          # Full compression (like Vidsaver release zip)
+          (cd release-assets && zip -9 "${ZIP_NAME}" "${APK_NAME}")
+          ls -lh release-assets
+          echo "RELEASE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Upload APK artifact (Actions Artifacts tab)
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-library-demo-apk-arm64
+          path: |
+            release-assets/*.apk
+            release-assets/*.zip
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release (APK + zip)
+    needs: build-apk
+    # Only on version tags, same pattern as Vidsaver
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: media-library-demo-apk-arm64
+          path: release-assets
+
+      - name: Show release assets
+        run: ls -lh release-assets
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/MediaLibraryDemo-${{ github.ref_name }}-Android-arm64-v8a.apk
+            release-assets/MediaLibraryDemo-${{ github.ref_name }}-Android-arm64-v8a.zip

@@ -1,0 +1,7 @@
+﻿site_name: flet-media-library
+
+theme:
+  name: "material"
+
+plugins:
+  - mkdocstrings

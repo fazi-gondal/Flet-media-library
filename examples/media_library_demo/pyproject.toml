@@ -1,0 +1,32 @@
+[project]
+name = "media-library-demo"
+version = "0.1.0"
+description = "Full-feature demo & manual test harness for flet-media-library"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flet>=1.0.0",
+    "flet-camera>=0.1.0",
+    "flet-video>=1.0.0",
+    "flet-media-library",
+]
+
+[tool.uv.sources]
+# Always use the local package source so demo tests your latest library code.
+flet-media-library = { path = "../../", editable = true }
+
+[tool.flet]
+org = "com.gondal"
+product = "Media Library Demo"
+company = "Fazi Gondal"
+
+[tool.flet.android]
+# Merged with package permissions from flet-media-library
+permissions = [
+    "android.permission.CAMERA",
+    "android.permission.RECORD_AUDIO",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

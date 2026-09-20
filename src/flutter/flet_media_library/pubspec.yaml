@@ -1,0 +1,32 @@
+name: flet_media_library
+description: Flet extension for cross-platform media library access powered by photo_manager.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: ">=1.17.0"
+
+dependencies:
+  flet: ^0.86.5
+  photo_manager: ^3.12.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.fazigondal.flet_media_library
+        pluginClass: FletMediaLibraryPlugin
+      # iOS behavior is provided by photo_manager. This minimal plugin entry
+      # ensures Flet includes the package in iOS builds. Host apps must add
+      # NSPhotoLibraryUsageDescription and NSPhotoLibraryAddUsageDescription
+      # to Info.plist.
+      ios:
+        pluginClass: FletMediaLibraryPlugin
