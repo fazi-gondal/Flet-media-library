@@ -64,7 +64,7 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
                 ft.Icon(ft.Icons.PHOTO_LIBRARY_OUTLINED, size=56, color=ft.Colors.OUTLINE),
                 ft.Text("No media loaded yet", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_SURFACE_VARIANT),
                 ft.Text("Tap 'Load Assets' or select an album above.", size=12, color=ft.Colors.OUTLINE),
-                ft.Button("Load Assets", icon=ft.Icons.DOWNLOAD_ROUNDED, on_click=lambda e: load_assets()),
+                ft.Button("Load Assets", icon=ft.Icons.DOWNLOAD_ROUNDED, on_click=lambda e: page.run_task(load_assets)),
             ],
         ),
     )

@@ -53,3 +53,7 @@ htmlcov/
 
 # uv
 .uv/
+
+# Flet
+.flet/
+**/.flet/
