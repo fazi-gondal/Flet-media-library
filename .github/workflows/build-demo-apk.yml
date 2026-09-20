@@ -57,9 +57,60 @@ jobs:
             src/flutter/flet_media_library/android/**/*
             src/flutter/flet_media_library/pubspec.yaml
 
+      # Build the local flet-media-library into a wheel so flet build's
+      # internal pip resolver can install it (uv path sources are not visible
+      # to pip, which flet build uses internally).
+      - name: Build local Python package wheel
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/flet-media-library-wheel"
+          uv build \
+            --wheel \
+            --out-dir "$RUNNER_TEMP/flet-media-library-wheel"
+
       - name: Install demo dependencies
         working-directory: examples/media_library_demo
         run: uv sync
+
+      # Rewrite the flet-media-library dependency line in pyproject.toml to
+      # point at the local wheel via a file:// URI so flet build can resolve it.
+      - name: Point demo to local package wheel
+        working-directory: examples/media_library_demo
+        run: |
+          set -euo pipefail
+
+          WHEEL="$(find "$RUNNER_TEMP/flet-media-library-wheel" \
+            -maxdepth 1 \
+            -type f \
+            -name 'flet_media_library-*.whl' \
+            | head -n 1)"
+
+          test -n "$WHEEL"
+          export WHEEL
+
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          pyproject = Path("pyproject.toml")
+          text = pyproject.read_text()
+          wheel_uri = Path(os.environ["WHEEL"]).resolve().as_uri()
+
+          updated, count = re.subn(
+              r'(?m)^\s*"flet-media-library",\s*$',
+              f'    "flet-media-library @ {wheel_uri}",\n',
+              text,
+          )
+
+          if count != 1:
+              raise SystemExit(
+                  f"Could not replace flet-media-library dependency (matches={count})"
+              )
+
+          pyproject.write_text(updated)
+          print(f"Using local wheel: {wheel_uri}")
+          PY
 
       # Accept Android SDK licenses non-interactively (required on fresh runners).
       - name: Accept Android licenses
@@ -77,11 +128,12 @@ jobs:
       # No ANDROID_KEYSTORE_* secrets — unsigned/debug-style APK for sideload
       # testing only. Not for Play Store.
       # Entry point: main.py at demo root (shim → src/main.py).
+      # --no-sync prevents uv from reverting the pyproject.toml wheel patch.
       - name: Build Android APK
         working-directory: examples/media_library_demo
         run: |
           set -euo pipefail
-          uv run flet build apk \
+          uv run --no-sync flet build apk \
             --module-name main \
             --split-per-abi \
             --arch arm64-v8a \
