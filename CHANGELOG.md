@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dart unit tests with mocked `photo_manager`
 - Optional resolved file-path API for in-app playback of library assets
 
+## [1.0.1] - 2026-09-21
+
+### Documentation & Packaging
+- Expanded Python compatibility constraint to `requires-python = ">=3.10"` supporting Python 3.10 through 3.14.
+- Added Credits & Acknowledgments section honoring project author and upstream dependencies.
+- Added direct download link for pre-compiled demo APK releases.
+- Synchronized README rendering for PyPI distribution.
+
 ## [1.0.0] - 2026-09-21
 
 First stable production release.
