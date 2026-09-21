@@ -28,6 +28,9 @@ jobs:
       - name: Analyze Dart package
         working-directory: src/flutter/flet_media_library
         run: |
+          dart --version
           flutter pub get
           flutter analyze
+          dart format .
+          git diff
           dart format --set-exit-if-changed --output=none .
