@@ -54,6 +54,18 @@ wheels = [
 ]
 
 [[package]]
+name = "flet-audio-recorder"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flet" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/df/e1b0c5c7c50a622a36706b9c5723e4f34564007a25eff6d0b3602711f4a7/flet_audio_recorder-1.0.0.tar.gz", hash = "sha256:5cc0a4750b3498c12463b7c0b96fa5ca25fe29bac04af778c3faf874cf4ba27e", size = 18243, upload-time = "2026-09-14T23:01:10.266Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/d8/82fdf40e21c44fd770bcd21c323593f29d12a6740807daf8bb8c21dd8d2f/flet_audio_recorder-1.0.0-py3-none-any.whl", hash = "sha256:b45dd7a3cc82fa91228184e811d2fa65041321cdb0d76efa64a6a57a2f25e995", size = 19581, upload-time = "2026-09-14T23:01:09.329Z" },
+]
+
+[[package]]
 name = "flet-camera"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -148,6 +160,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "flet" },
+    { name = "flet-audio-recorder" },
     { name = "flet-camera" },
     { name = "flet-media-library" },
     { name = "flet-video" },
@@ -156,6 +169,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "flet", specifier = ">=1.0.0" },
+    { name = "flet-audio-recorder", specifier = ">=1.0.0" },
     { name = "flet-camera", specifier = ">=0.1.0" },
     { name = "flet-media-library", editable = "../../" },
     { name = "flet-video", specifier = ">=1.0.0" },

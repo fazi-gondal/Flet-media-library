@@ -1,7 +1,8 @@
-"""Camera photo + video recording → save via flet-media-library with modern UI."""
+"""Camera photo + video recording + microphone audio recording → flet-media-library."""
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -18,11 +19,23 @@ except ImportError:
     HAS_CAMERA = False
     fc = None  # type: ignore
 
+try:
+    import flet_audio_recorder as far
+
+    HAS_RECORDER = True
+except ImportError:
+    HAS_RECORDER = False
+    far = None  # type: ignore
+
 
 def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
     media = session.media
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Shared status + album field
+    # ────────────────────────────────────────────────────────────────────────
     status = ft.Text(
-        "Camera ready. Tap 'Init camera' or take a shot." if HAS_CAMERA else "flet-camera is not installed.",
+        "Camera ready." if HAS_CAMERA else "flet-camera is not installed.",
         size=12,
         color=ft.Colors.ON_SURFACE_VARIANT,
     )
@@ -36,10 +49,185 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
     preview_img = ft.Image("", width=140, height=140, fit=ft.BoxFit.COVER, border_radius=8, visible=False)
     preview_info = ft.Text("No capture yet", size=11, color=ft.Colors.OUTLINE)
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Audio Recorder section (always shown if flet_audio_recorder installed)
+    # ────────────────────────────────────────────────────────────────────────
+    rec_status = ft.Text("Tap ● to start recording", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+    rec_timer_text = ft.Text("00:00", size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY)
+    rec_state = {"recording": False, "seconds": 0, "timer_task": None}
+    rec_filename_field = ft.TextField(
+        label="Recording filename",
+        value=f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a",
+        dense=True,
+        expand=True,
+        hint_text="e.g. my_voice_note.m4a",
+    )
+
+    def _build_recorder_card() -> ft.Control:
+        if not HAS_RECORDER:
+            return ft.Card(
+                content=ft.Container(
+                    padding=16,
+                    content=ft.Column(
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=10,
+                        controls=[
+                            ft.Icon(ft.Icons.MIC_OFF_ROUNDED, size=40, color=ft.Colors.OUTLINE),
+                            ft.Text("Audio Recorder Not Available", size=15, weight=ft.FontWeight.BOLD),
+                            ft.Text(
+                                "`flet-audio-recorder` is not installed.\n"
+                                "Add it to pyproject.toml dependencies to enable mic recording.",
+                                size=12,
+                                text_align=ft.TextAlign.CENTER,
+                                color=ft.Colors.ON_SURFACE_VARIANT,
+                            ),
+                            ft.Container(
+                                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                                padding=10,
+                                border_radius=8,
+                                content=ft.Text(
+                                    "uv add flet-audio-recorder",
+                                    font_family="monospace",
+                                    size=11,
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            )
+
+        recorder = far.AudioRecorder(
+            audio_encoder=far.AudioEncoder.AAC,
+            suppress_noise=True,
+        )
+        page.services.append(recorder)
+
+        rec_btn_ref = ft.Ref[ft.IconButton]()
+        level_bar = ft.ProgressBar(value=0, width=200, color=ft.Colors.PRIMARY, bgcolor=ft.Colors.OUTLINE_VARIANT)
+
+        async def _tick_timer() -> None:
+            while rec_state["recording"]:
+                await asyncio.sleep(1)
+                rec_state["seconds"] += 1
+                m, s = divmod(rec_state["seconds"], 60)
+                rec_timer_text.value = f"{m:02d}:{s:02d}"
+                # Animate level bar with amplitude if available
+                try:
+                    amp = await recorder.get_input_level()
+                    level_bar.value = min(1.0, abs(amp or 0) / 100.0)
+                except Exception:  # noqa: BLE001
+                    pass
+                page.update()
+
+        async def toggle_recording(e: ft.ControlEvent) -> None:
+            if not rec_state["recording"]:
+                # Start recording to a temp file
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                tmp_path = Path(tempfile.gettempdir()) / f"mldemo_rec_{ts}.m4a"
+                rec_state["tmp_path"] = str(tmp_path)
+                rec_state["seconds"] = 0
+                rec_timer_text.value = "00:00"
+                try:
+                    await recorder.start_recording(output_path=str(tmp_path))
+                    rec_state["recording"] = True
+                    rec_btn_ref.current.icon = ft.Icons.STOP_CIRCLE_ROUNDED
+                    rec_btn_ref.current.icon_color = ft.Colors.ERROR
+                    rec_status.value = "Recording… tap ■ to stop"
+                    rec_status.color = ft.Colors.ERROR
+                    rec_state["timer_task"] = page.run_task(_tick_timer)
+                except Exception as ex:  # noqa: BLE001
+                    rec_status.value = f"Could not start recording: {ex}"
+                    rec_status.color = ft.Colors.ERROR
+            else:
+                # Stop recording
+                try:
+                    await recorder.stop_recording()
+                except Exception:  # noqa: BLE001
+                    pass
+                rec_state["recording"] = False
+                rec_btn_ref.current.icon = ft.Icons.MIC_ROUNDED
+                rec_btn_ref.current.icon_color = ft.Colors.PRIMARY
+                rec_status.value = "Saving to Music…"
+                rec_status.color = None
+                level_bar.value = 0
+                page.update()
+
+                # Save to Music/Recordings via save_audio
+                tmp_path = Path(rec_state.get("tmp_path", ""))
+                fname = rec_filename_field.value.strip() or f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
+                # Refresh filename for next recording
+                rec_filename_field.value = f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
+                try:
+                    asset = await media.save_audio(
+                        str(tmp_path),
+                        file_name=fname,
+                        album="Music/Recordings",
+                    )
+                    session.track_owned(asset.id)
+                    rec_status.value = f"Saved: {asset.display_name}"
+                    rec_status.color = ft.Colors.GREEN
+                    page.show_dialog(
+                        ft.SnackBar(content=ft.Text(f"Recording saved to Music/Recordings: {asset.display_name}"))
+                    )
+                except Exception as ex:  # noqa: BLE001
+                    rec_status.value = f"Save failed: {ex}"
+                    rec_status.color = ft.Colors.ERROR
+                    page.show_dialog(ft.SnackBar(content=ft.Text(str(ex))))
+
+            page.update()
+
+        return ft.Card(
+            content=ft.Container(
+                padding=16,
+                content=ft.Column(
+                    spacing=12,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        ft.Row(
+                            spacing=8,
+                            controls=[
+                                ft.Icon(ft.Icons.MIC_ROUNDED, color=ft.Colors.PRIMARY, size=20),
+                                ft.Text("Audio Recorder", size=15, weight=ft.FontWeight.BOLD),
+                                ft.Text("(saves to Music/Recordings)", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                            ],
+                        ),
+                        rec_filename_field,
+                        ft.Row(
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            spacing=16,
+                            controls=[
+                                rec_timer_text,
+                                ft.IconButton(
+                                    ref=rec_btn_ref,
+                                    icon=ft.Icons.MIC_ROUNDED,
+                                    icon_size=56,
+                                    icon_color=ft.Colors.PRIMARY,
+                                    tooltip="Start / Stop Recording",
+                                    style=ft.ButtonStyle(
+                                        shape=ft.CircleBorder(),
+                                        bgcolor=ft.Colors.PRIMARY_CONTAINER,
+                                    ),
+                                    on_click=toggle_recording,
+                                ),
+                            ],
+                        ),
+                        level_bar,
+                        rec_status,
+                    ],
+                ),
+            ),
+        )
+
+    recorder_card = _build_recorder_card()
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Camera section
+    # ────────────────────────────────────────────────────────────────────────
     if not HAS_CAMERA:
         return ft.Column(
             expand=True,
             spacing=16,
+            scroll=ft.ScrollMode.AUTO,
             controls=[
                 ft.Card(
                     content=ft.Container(
@@ -70,7 +258,8 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                             ],
                         ),
                     ),
-                )
+                ),
+                recorder_card,
             ],
         )
 
@@ -240,6 +429,8 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     ),
                 ),
             ),
+            # Audio Recorder Card
+            recorder_card,
             # Latest Capture Card
             ft.Card(
                 content=ft.Container(

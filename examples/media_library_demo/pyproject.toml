@@ -8,6 +8,7 @@ dependencies = [
     "flet>=1.0.0",
     "flet-camera>=0.1.0",
     "flet-video>=1.0.0",
+    "flet-audio-recorder>=1.0.0",
     "flet-media-library",
 ]
 

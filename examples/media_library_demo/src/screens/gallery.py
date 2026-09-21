@@ -1,4 +1,4 @@
-"""Albums, asset grid, multi-select delete, detail, rename, video play with modern design."""
+"""Albums, asset grid, multi-select delete, detail, rename, move, audio/video play."""
 
 from __future__ import annotations
 
@@ -14,6 +14,19 @@ try:
 except ImportError:
     HAS_VIDEO = False
     ftv = None  # type: ignore
+
+# Common Android relative-path destinations shown in the move picker
+_COMMON_PATHS = [
+    "Pictures",
+    "Pictures/Archive",
+    "Pictures/Screenshots",
+    "DCIM",
+    "DCIM/Camera",
+    "Movies",
+    "Music",
+    "Music/Recordings",
+    "Downloads",
+]
 
 
 def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
@@ -44,9 +57,7 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
         spacing=8,
         run_spacing=8,
     )
-    # asset_id -> selected
     selected: dict[str, bool] = {}
-    # asset_id -> MediaAsset-like snapshot for play
     asset_meta: dict[str, object] = {}
     select_mode = {"on": False}
     offset = {"n": 0}
@@ -130,11 +141,19 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
             else:
                 await show_detail(a.id)
 
+        # Media type badge
         badge = None
         if asset.media_type == "video":
             badge = ft.Container(
                 content=ft.Icon(ft.Icons.PLAY_CIRCLE_FILLED_ROUNDED, size=28, color=ft.Colors.WHITE),
                 alignment=ft.Alignment.CENTER,
+            )
+        elif asset.media_type == "audio":
+            badge = ft.Container(
+                content=ft.Icon(ft.Icons.MUSIC_NOTE_ROUNDED, size=24, color=ft.Colors.WHITE),
+                alignment=ft.Alignment.CENTER,
+                bgcolor=ft.Colors.with_opacity(0.55, ft.Colors.BLACK),
+                border_radius=8,
             )
 
         stack_children = [img]
@@ -210,7 +229,6 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
         if not select_mode["on"]:
             for k in selected:
                 selected[k] = False
-        # Rebuild tiles so checkboxes show/hide
         page.run_task(load_assets, None, False)
         mode_btn.content = "Cancel Select" if select_mode["on"] else "Select Mode"
         mode_btn.icon = ft.Icons.CLOSE if select_mode["on"] else ft.Icons.CHECK_BOX_OUTLINED
@@ -257,7 +275,7 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
                 ("Name", a.display_name),
                 ("Type", a.media_type),
                 ("MIME", a.mime_type or "unknown"),
-                ("Dimensions", f"{a.width} x {a.height}" if a.width else "unknown"),
+                ("Dimensions", f"{a.width} x {a.height}" if a.width else "n/a"),
                 ("Duration", f"{a.duration_ms / 1000:.1f}s" if a.duration_ms else "n/a"),
                 ("Album", a.album_name or "(none)"),
                 ("Path", a.relative_path or "(none)"),
@@ -274,35 +292,111 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
                 for label, val in detail_items
             ]
 
-            async def do_delete(e: ft.ControlEvent) -> None:
-                ok = await media.delete_asset(asset_id)
-                session.untrack(asset_id)
-                page.pop_dialog()
-                page.show_dialog(ft.SnackBar(content=ft.Text(f"Deleted asset: {ok}")))
-                await load_assets(None, more=False)
+            # ── Rename field (pre-filled with current name) ──────────────────
+            rename_field = ft.TextField(
+                label="New filename",
+                value=a.display_name,
+                dense=True,
+                autofocus=True,
+                suffix_icon=ft.Icons.EDIT_ROUNDED,
+                hint_text="e.g. my_photo.jpg",
+            )
 
-            async def do_rename(e: ft.ControlEvent) -> None:
-                new_name = rename_field.value or ""
+            # ── Move: common-path dropdown + optional custom override ─────────
+            move_dd = ft.Dropdown(
+                label="Move to folder",
+                dense=True,
+                value=_COMMON_PATHS[0],
+                options=[ft.DropdownOption(key=p, text=p) for p in _COMMON_PATHS]
+                + [ft.DropdownOption(key="__custom__", text="Custom path…")],
+            )
+            custom_path_field = ft.TextField(
+                label="Custom path",
+                value="",
+                dense=True,
+                visible=False,
+                hint_text="Pictures/MyAlbum",
+            )
+
+            def on_move_dd_change(e: ft.ControlEvent) -> None:
+                custom_path_field.visible = move_dd.value == "__custom__"
+                page.update()
+
+            move_dd.on_change = on_move_dd_change
+
+            async def do_delete(e: ft.ControlEvent) -> None:
+                page.pop_dialog()
                 try:
-                    ok = await media.rename_asset(asset_id, new_name)
-                    page.show_dialog(ft.SnackBar(content=ft.Text(f"Rename: ok={ok}")))
-                    page.pop_dialog()
-                    await show_detail(asset_id)
+                    deleted = await media.delete_assets([asset_id])
+                    for did in deleted:
+                        session.untrack(did)
+                    page.show_dialog(
+                        ft.SnackBar(content=ft.Text(f"Deleted {len(deleted)} asset(s)"))
+                    )
+                    await load_assets(None, more=False)
                 except Exception as ex:  # noqa: BLE001
                     page.show_dialog(ft.SnackBar(content=ft.Text(str(ex))))
 
-            async def do_play(e: ft.ControlEvent) -> None:
+            async def do_rename(e: ft.ControlEvent) -> None:
+                new_name = rename_field.value.strip()
+                if not new_name:
+                    page.show_dialog(ft.SnackBar(content=ft.Text("Please enter a file name.")))
+                    return
+                try:
+                    ok = await media.rename_asset(asset_id, new_name)
+                    if ok:
+                        page.pop_dialog()
+                        page.show_dialog(ft.SnackBar(content=ft.Text(f"Renamed to: {new_name}")))
+                        await load_assets(None, more=False)
+                    else:
+                        page.show_dialog(
+                            ft.SnackBar(content=ft.Text("Rename returned false — permission may be denied or file not owned."))
+                        )
+                except Exception as ex:  # noqa: BLE001
+                    page.show_dialog(ft.SnackBar(content=ft.Text(str(ex))))
+
+            async def do_move(e: ft.ControlEvent) -> None:
+                target = (
+                    custom_path_field.value.strip()
+                    if move_dd.value == "__custom__"
+                    else (move_dd.value or "")
+                )
+                if not target:
+                    page.show_dialog(ft.SnackBar(content=ft.Text("Please choose or enter a destination folder.")))
+                    return
+                try:
+                    ok = await media.move_asset(asset_id, target)
+                    if ok:
+                        page.pop_dialog()
+                        page.show_dialog(ft.SnackBar(content=ft.Text(f"Moved to: {target}")))
+                        await load_assets(None, more=False)
+                    else:
+                        page.show_dialog(
+                            ft.SnackBar(content=ft.Text("Move returned false — device may require Android 10+ or user denied."))
+                        )
+                except UnsupportedError as ex:
+                    page.show_dialog(ft.SnackBar(content=ft.Text(str(ex))))
+                except Exception as ex:  # noqa: BLE001
+                    page.show_dialog(ft.SnackBar(content=ft.Text(str(ex))))
+
+            async def do_play_video(e: ft.ControlEvent) -> None:
                 page.pop_dialog()
                 await play_video(a.source_uri or "", a.display_name)
 
-            rename_field = ft.TextField(label="Rename File", value=a.display_name, dense=True, width=240)
+            async def do_play_audio(e: ft.ControlEvent) -> None:
+                page.pop_dialog()
+                await play_audio(a.source_uri or "", a.display_name)
+
             actions = [
-                ft.TextButton("Rename", on_click=do_rename),
-                ft.TextButton("Delete", on_click=do_delete),
+                ft.TextButton("Rename", icon=ft.Icons.DRIVE_FILE_RENAME_OUTLINE_ROUNDED, on_click=do_rename),
+                ft.TextButton("Move", icon=ft.Icons.DRIVE_FILE_MOVE_ROUNDED, on_click=do_move),
+                ft.TextButton("Delete", icon=ft.Icons.DELETE_OUTLINE_ROUNDED, on_click=do_delete),
                 ft.TextButton("Close", on_click=lambda e: page.pop_dialog()),
             ]
             if a.media_type == "video":
-                actions.insert(0, ft.TextButton("Play Video", icon=ft.Icons.PLAY_ARROW_ROUNDED, on_click=do_play))
+                actions.insert(0, ft.TextButton("▶ Play Video", icon=ft.Icons.PLAY_ARROW_ROUNDED, on_click=do_play_video))
+            elif a.media_type == "audio":
+                actions.insert(0, ft.TextButton("▶ Play Audio", icon=ft.Icons.HEADPHONES_ROUNDED, on_click=do_play_audio))
 
             page.show_dialog(
                 ft.AlertDialog(
@@ -313,14 +407,20 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
                     content=ft.Column(
                         tight=True,
                         scroll=ft.ScrollMode.AUTO,
-                        spacing=6,
+                        spacing=8,
                         controls=[
                             *info_rows,
                             ft.Divider(),
+                            ft.Text("Rename", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
                             rename_field,
+                            ft.Divider(),
+                            ft.Text("Move to folder", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
+                            move_dd,
+                            custom_path_field,
                         ],
                     ),
                     actions=actions,
+                    actions_alignment=ft.MainAxisAlignment.START,
                 )
             )
         except Exception as ex:  # noqa: BLE001
@@ -359,6 +459,95 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
                 actions=[ft.TextButton("Close", on_click=close_player)],
             )
         )
+
+    async def play_audio(uri: str, title: str) -> None:
+        """Simple audio player using flet-video's Audio widget (or fallback message)."""
+        if not uri:
+            page.show_dialog(
+                ft.SnackBar(content=ft.Text("No source URI available for this audio file."))
+            )
+            return
+
+        # flet-video exposes an Audio control on Android that wraps ExoPlayer.
+        # Fall back to a message if flet-video is not installed.
+        if HAS_VIDEO and hasattr(ftv, "Audio"):
+            audio_ctrl = ftv.Audio(
+                src=uri,
+                autoplay=True,
+            )
+            playing = {"on": True}
+            play_icon_ref = ft.Ref[ft.IconButton]()
+
+            def toggle_audio(e: ft.ControlEvent) -> None:
+                try:
+                    if playing["on"]:
+                        audio_ctrl.pause()
+                        play_icon_ref.current.icon = ft.Icons.PLAY_ARROW_ROUNDED
+                    else:
+                        audio_ctrl.play()
+                        play_icon_ref.current.icon = ft.Icons.PAUSE_ROUNDED
+                    playing["on"] = not playing["on"]
+                    page.update()
+                except Exception:  # noqa: BLE001
+                    pass
+
+            def close_audio(e: ft.ControlEvent) -> None:
+                try:
+                    audio_ctrl.pause()
+                except Exception:  # noqa: BLE001
+                    pass
+                page.pop_dialog()
+
+            page.show_dialog(
+                ft.AlertDialog(
+                    title=ft.Row([
+                        ft.Icon(ft.Icons.HEADPHONES_ROUNDED, color=ft.Colors.PRIMARY),
+                        ft.Text(title or "Audio Playback", size=15, weight=ft.FontWeight.BOLD),
+                    ]),
+                    content=ft.Column(
+                        tight=True,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=16,
+                        controls=[
+                            audio_ctrl,
+                            ft.Icon(ft.Icons.MUSIC_NOTE_ROUNDED, size=64, color=ft.Colors.PRIMARY),
+                            ft.Text(title, size=13, text_align=ft.TextAlign.CENTER),
+                            ft.IconButton(
+                                ref=play_icon_ref,
+                                icon=ft.Icons.PAUSE_ROUNDED,
+                                icon_size=48,
+                                tooltip="Play / Pause",
+                                on_click=toggle_audio,
+                            ),
+                        ],
+                    ),
+                    actions=[ft.TextButton("Close", on_click=close_audio)],
+                )
+            )
+        else:
+            # Fallback: flet_video not installed or Audio not available
+            page.show_dialog(
+                ft.AlertDialog(
+                    title=ft.Text("Audio Playback"),
+                    content=ft.Column(
+                        tight=True,
+                        spacing=12,
+                        controls=[
+                            ft.Icon(ft.Icons.HEADPHONES_ROUNDED, size=48, color=ft.Colors.PRIMARY),
+                            ft.Text(f"File: {title}", size=13),
+                            ft.Text(
+                                "Install flet-video >= 1.0.0 and run on Android for in-app audio playback.",
+                                size=11,
+                                color=ft.Colors.ON_SURFACE_VARIANT,
+                            ),
+                            ft.SelectionArea(
+                                content=ft.Text(uri, size=10, font_family="monospace", selectable=True)
+                            ),
+                        ],
+                    ),
+                    actions=[ft.TextButton("Close", on_click=lambda e: page.pop_dialog())],
+                )
+            )
 
     mode_btn = ft.Button("Select Mode", icon=ft.Icons.CHECK_BOX_OUTLINED, on_click=toggle_select_mode)
     delete_btn = ft.Button("Delete Selected", icon=ft.Icons.DELETE_FOREVER_ROUNDED, on_click=batch_delete, visible=False)
