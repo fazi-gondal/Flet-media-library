@@ -89,7 +89,8 @@ class PhotoManagerAdapter {
     final mapped = _mapPermissionState(state);
     return MediaPermissionsResult(
       states: {for (final t in mediaTypes) t: mapped},
-      canRequest: mapped == MediaPermissionState.denied ||
+      canRequest:
+          mapped == MediaPermissionState.denied ||
           mapped == MediaPermissionState.unknown,
     );
   }
@@ -127,7 +128,9 @@ class PhotoManagerAdapter {
   Future<List<MediaAlbum>> getAlbums({
     List<String> mediaTypes = const ["all"],
   }) async {
-    await ensureAccess(mediaType: mediaTypes.contains("all") ? "all" : mediaTypes.first);
+    await ensureAccess(
+      mediaType: mediaTypes.contains("all") ? "all" : mediaTypes.first,
+    );
     final requestType = _requestTypeFromMediaTypes(mediaTypes);
     final paths = await PhotoManager.getAssetPathList(
       hasAll: true,
@@ -196,8 +199,7 @@ class PhotoManagerAdapter {
     await ensureAccess(mediaType: mediaType);
     // Album queries go through AssetPathEntity, which only supports the
     // classical FilterOptionGroup orders (create/update date).
-    final dateSort =
-        sortBy == "date_added" || sortBy == "date_modified";
+    final dateSort = sortBy == "date_added" || sortBy == "date_modified";
     if (albumId != null && albumId.isNotEmpty && !dateSort) {
       throw MediaLibraryException(
         MediaErrorCodes.unsupported,
@@ -233,7 +235,10 @@ class PhotoManagerAdapter {
         ),
       );
       total = await path.assetCountAsync;
-      entities = await path.getAssetListRange(start: offset, end: offset + limit);
+      entities = await path.getAssetListRange(
+        start: offset,
+        end: offset + limit,
+      );
     } else {
       final filter = _buildGlobalFilter(
         sortBy: sortBy,
@@ -344,10 +349,11 @@ class PhotoManagerAdapter {
     } catch (_) {}
 
     final relativePath = entity.relativePath ?? "";
-    final albumSegments =
-        relativePath.split("/").where((s) => s.isNotEmpty).toList();
-    final albumName =
-        albumSegments.isNotEmpty ? albumSegments.last : "";
+    final albumSegments = relativePath
+        .split("/")
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final albumName = albumSegments.isNotEmpty ? albumSegments.last : "";
 
     // Prefer a stable platform URI when available (Android content://,
     // iOS localIdentifier-style id). Never required by the public API.
@@ -623,9 +629,9 @@ class PhotoManagerAdapter {
 
 extension on AssetType {
   RequestType get requestType => switch (this) {
-        AssetType.image => RequestType.image,
-        AssetType.video => RequestType.video,
-        AssetType.audio => RequestType.audio,
-        AssetType.other => RequestType.common,
-      };
+    AssetType.image => RequestType.image,
+    AssetType.video => RequestType.video,
+    AssetType.audio => RequestType.audio,
+    AssetType.other => RequestType.common,
+  };
 }

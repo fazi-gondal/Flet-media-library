@@ -27,19 +27,19 @@ class NativeFallback {
 
   /// Updates DISPLAY_NAME on a MediaStore record.
   Future<bool> renameAsset(String assetId, String newName) async {
-    final result = await _channel.invokeMethod<bool>(
-      'renameAsset',
-      {'assetId': assetId, 'newName': newName},
-    );
+    final result = await _channel.invokeMethod<bool>('renameAsset', {
+      'assetId': assetId,
+      'newName': newName,
+    });
     return result ?? false;
   }
 
   /// Updates RELATIVE_PATH on a MediaStore record (Android 10 only path).
   Future<bool> moveAsset(String assetId, String targetRelativePath) async {
-    final result = await _channel.invokeMethod<bool>(
-      'moveAsset',
-      {'assetId': assetId, 'targetRelativePath': targetRelativePath},
-    );
+    final result = await _channel.invokeMethod<bool>('moveAsset', {
+      'assetId': assetId,
+      'targetRelativePath': targetRelativePath,
+    });
     return result ?? false;
   }
 }

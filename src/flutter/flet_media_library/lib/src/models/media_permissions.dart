@@ -8,13 +8,13 @@ enum MediaPermissionState {
   unknown;
 
   String get value => switch (this) {
-        granted => "granted",
-        limited => "limited",
-        denied => "denied",
-        deniedForever => "denied_forever",
-        restricted => "restricted",
-        unknown => "unknown",
-      };
+    granted => "granted",
+    limited => "limited",
+    denied => "denied",
+    deniedForever => "denied_forever",
+    restricted => "restricted",
+    unknown => "unknown",
+  };
 
   static MediaPermissionState fromValue(String? value) =>
       MediaPermissionState.values.firstWhere(
@@ -28,14 +28,17 @@ class MediaPermissionsResult {
   final Map<String, MediaPermissionState> states; // keyed by media type
   final bool canRequest;
 
-  const MediaPermissionsResult({required this.states, required this.canRequest});
+  const MediaPermissionsResult({
+    required this.states,
+    required this.canRequest,
+  });
 
   Map<String, dynamic> toMap() => {
-        "permissions": {
-          for (final entry in states.entries) entry.key: entry.value.value,
-        },
-        "can_request": canRequest,
-      };
+    "permissions": {
+      for (final entry in states.entries) entry.key: entry.value.value,
+    },
+    "can_request": canRequest,
+  };
 }
 
 /// Change event forwarded to Python.
@@ -57,9 +60,9 @@ class MediaChangeEvent {
   });
 
   Map<String, dynamic> toMap() => {
-        "change_type": changeType,
-        "asset_id": assetId,
-        "media_type": mediaType,
-        "timestamp": timestampMs,
-      };
+    "change_type": changeType,
+    "asset_id": assetId,
+    "media_type": mediaType,
+    "timestamp": timestampMs,
+  };
 }
