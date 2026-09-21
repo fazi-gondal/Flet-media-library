@@ -8,7 +8,11 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS-green.svg)]()
 [![Flet](https://img.shields.io/badge/Flet-%3E%3D1.0.0-purple.svg)](https://flet.dev)
+[![Author: Fazi Gondal](https://img.shields.io/badge/Author-Fazi_Gondal-orange.svg)](https://github.com/fazi-gondal)
 [![Download Demo APK](https://img.shields.io/badge/Download_APK-GitHub_Releases-brightgreen?logo=android&logoColor=white)](https://github.com/fazi-gondal/Flet-media-library/releases)
+
+> **Developed & Maintained by**: [Fazi Gondal](https://github.com/fazi-gondal)  
+> **Try the App**: Download the pre-built [Media Library Demo APK from GitHub Releases](https://github.com/fazi-gondal/Flet-media-library/releases)
 
 ---
 
