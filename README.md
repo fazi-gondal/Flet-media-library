@@ -7,7 +7,8 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 [![PyPI](https://img.shields.io/pypi/v/flet-media-library.svg)](https://pypi.org/project/flet-media-library/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS-green.svg)]()
-[![Flet](https://img.shields.io/badge/Flet-%3E%3D0.86.5%20%7C%201.0.0-purple.svg)](https://flet.dev)
+[![Flet](https://img.shields.io/badge/Flet-%3E%3D1.0.0-purple.svg)](https://flet.dev)
+[![Download Demo APK](https://img.shields.io/badge/Download_APK-GitHub_Releases-brightgreen?logo=android&logoColor=white)](https://github.com/fazi-gondal/Flet-media-library/releases)
 
 ---
 
@@ -39,7 +40,10 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 - [Building Packaged Mobile Apps](#building-packaged-mobile-apps)
   - [Android (APK)](#android-apk)
   - [iOS (IPA / Simulator)](#ios-ipa--simulator)
+- [Demo App & APK Download](#demo-app--apk-download)
 - [Local Development Setup](#local-development-setup)
+- [Credits & Acknowledgments](#credits--acknowledgments)
+- [License](#license)
 
 ---
 
@@ -148,6 +152,25 @@ async def main(page: ft.Page):
 if __name__ == "__main__":
     ft.run(main)
 ```
+
+---
+
+## Demo App & APK Download
+
+You can test `flet-media-library` immediately on your physical Android phone without setting up Flutter or Android development tools.
+
+Pre-compiled, ready-to-sideload Android APKs (`.apk`) are automatically compiled and attached to every GitHub release:
+
+👉 **[Download the latest Demo APK from GitHub Releases](https://github.com/fazi-gondal/Flet-media-library/releases)**
+
+### Features in the Demo App:
+- **Media Gallery**: High-performance grid with base64 thumbnails for photos and videos.
+- **In-App Media Player**: Built-in video and audio playback dialogs (`flet-video` / ExoPlayer).
+- **Camera & Microphone Capture**: Live camera preview (`flet-camera`) and audio recorder (`flet-audio-recorder`) saving directly to gallery and `Music/Recordings`.
+- **File Management**: Move files between folders, rename with extensions, and batch-delete items.
+- **Automated Smoke Test**: 1-click test verifying all 8 core package APIs on actual hardware.
+
+For instructions on building the demo from source, see [`examples/media_library_demo/README.md`](examples/media_library_demo/).
 
 ---
 
@@ -629,3 +652,20 @@ dart format --set-exit-if-changed --output=none .
 ```
 
 To explore and test on a physical device or emulator, see the full-featured test harness in [`examples/media_library_demo/`](examples/media_library_demo/).
+
+---
+
+## Credits & Acknowledgments
+
+- **Creator & Lead Maintainer**: [Fazi Gondal](https://github.com/fazi-gondal) ([@fazi-gondal](https://github.com/fazi-gondal))
+- **Core Dependencies & Ecosystem**:
+  - [Flet](https://flet.dev) — The Python framework for Flutter UI created by [Feodor Fitsner](https://github.com/FeodorFitsner) and the Flet team.
+  - [`photo_manager`](https://pub.dev/packages/photo_manager) — The underlying cross-platform asset and album engine created by [CaiJingLong / Alex Li](https://github.com/CaiJingLong) and the [FlutterCandies](https://github.com/fluttercandies) team.
+  - [`flet-camera`](https://pypi.org/project/flet-camera/) & [`flet-video`](https://pypi.org/project/flet-video/) — Camera preview and media player controls used in the companion demo.
+  - [`flet-audio-recorder`](https://pypi.org/project/flet-audio-recorder/) — Cross-platform audio recording integration for Flet.
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
