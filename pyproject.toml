@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Flet service extension for device media library access (photos, videos, audio) on Android and iOS — albums, assets, thumbnails, permissions, save/delete, and change notifications via photo_manager."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 authors = [
     { name = "Fazi Gondal", email = "nextinpk@gmail.com" },
 ]
@@ -35,10 +35,6 @@ classifiers = [
     "Operating System :: Android",
     "Operating System :: iOS",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Multimedia :: Graphics",
@@ -47,7 +43,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "flet>=0.86.5",
+    "flet>=1.0.0",
 ]
 
 [project.urls]
