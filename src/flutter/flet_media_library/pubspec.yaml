@@ -1,6 +1,6 @@
 name: flet_media_library
 description: Flet extension for cross-platform media library access powered by photo_manager.
-version: 0.1.0
+version: 1.0.0
 publish_to: none
 
 environment:
@@ -8,7 +8,7 @@ environment:
   flutter: ">=1.17.0"
 
 dependencies:
-  flet: ^0.86.5
+  flet: ">=0.86.5 <2.0.0"
   photo_manager: ^3.12.0
   flutter:
     sdk: flutter

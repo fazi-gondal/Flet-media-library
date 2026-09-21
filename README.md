@@ -110,8 +110,8 @@ uv add flet-media-library
 ```toml
 [project]
 dependencies = [
-    "flet>=0.86.5",
-    "flet-media-library>=0.1.0",
+    "flet>=1.0.0",
+    "flet-media-library>=1.0.0",
 ]
 ```
 

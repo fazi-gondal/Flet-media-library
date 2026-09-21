@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dart unit tests with mocked `photo_manager`
 - Optional resolved file-path API for in-app playback of library assets
 
+## [1.0.0] - 2026-09-21
+
+First stable production release.
+
+### Added
+- Full compatibility with Flet 1.0.0 and Python 3.14.
+- In-app video and audio playback support via `flet-video` integration.
+- Microphone audio recording with `flet-audio-recorder` and saving directly to `Music/Recordings`.
+- Streamlined asset move & rename workflows for Android scoped storage.
+- Comprehensive end-to-end demo and integration test suite.
+
 ## [0.1.0] - 2026-09-20
 
 First public alpha on PyPI.
