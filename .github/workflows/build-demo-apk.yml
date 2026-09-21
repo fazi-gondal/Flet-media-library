@@ -9,19 +9,8 @@ name: Build Demo APK (unsigned)
 
 on:
   push:
-    branches: [main]
     tags:
       - "v*"
-    paths:
-      - "src/**"
-      - "examples/media_library_demo/**"
-      - ".github/workflows/build-demo-apk.yml"
-      - "pyproject.toml"
-  pull_request:
-    paths:
-      - "src/**"
-      - "examples/media_library_demo/**"
-      - ".github/workflows/build-demo-apk.yml"
   workflow_dispatch:
 
 concurrency:
