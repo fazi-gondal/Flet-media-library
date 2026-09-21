@@ -3,7 +3,7 @@ name = "media-library-demo"
 version = "0.1.0"
 description = "Full-feature demo & manual test harness for flet-media-library"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
     "flet>=1.0.0",
     "flet-camera>=0.1.0",
