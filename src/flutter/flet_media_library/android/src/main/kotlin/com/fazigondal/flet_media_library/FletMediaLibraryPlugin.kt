@@ -1,27 +1,34 @@
 package com.fazigondal.flet_media_library
 
+import android.app.Activity
+import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
 
 /**
  * Minimal native fallback for capabilities photo_manager 3.12.0 lacks:
  *
  *  - saveAudio   : MediaStore insert of audio files
- *  - renameAsset : DISPLAY_NAME update by MediaStore _id
+ *  - renameAsset : DISPLAY_NAME update by MediaStore _id (with MediaStore.createWriteRequest
+ *                  consent prompt for non-owned media on Android 11+)
  *  - moveAsset   : RELATIVE_PATH update by MediaStore _id (Android 10 only;
- *                  Android 11+ goes through photo_manager's createWriteRequest)
+ *                  Android 11+ goes through photo_manager's moveAssetsToPath)
  *
  * Everything else is handled by photo_manager in Dart.
  */
-class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
 
     companion object {
         private const val TAG = "FletMediaLibrary"
@@ -29,10 +36,20 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
         /** Default album folder for saved audio when none is provided. */
         private const val DEFAULT_AUDIO_DIR = "Music/FletMediaLibrary"
+
+        /** Request code for user write-permission prompt. */
+        private const val REQUEST_CODE_WRITE_PERMISSION = 42021
     }
 
     private var context: Context? = null
+    private var activity: Activity? = null
+    private var activityBinding: ActivityPluginBinding? = null
     private var channel: MethodChannel? = null
+
+    // Pending operation waiting for system user consent dialog
+    private var pendingResult: MethodChannel.Result? = null
+    private var pendingUri: Uri? = null
+    private var pendingValues: ContentValues? = null
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -44,6 +61,56 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         channel?.setMethodCallHandler(null)
         channel = null
         context = null
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+        activityBinding = binding
+        binding.addActivityResultListener(this)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activityBinding?.removeActivityResultListener(this)
+        activity = null
+        activityBinding = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        onAttachedToActivity(binding)
+    }
+
+    override fun onDetachedFromActivity() {
+        activityBinding?.removeActivityResultListener(this)
+        activity = null
+        activityBinding = null
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode == REQUEST_CODE_WRITE_PERMISSION) {
+            val res = pendingResult
+            val uri = pendingUri
+            val values = pendingValues
+            pendingResult = null
+            pendingUri = null
+            pendingValues = null
+
+            if (res == null) return false
+
+            if (resultCode == Activity.RESULT_OK && uri != null && values != null) {
+                try {
+                    val rows = context?.contentResolver?.update(uri, values, null, null) ?: 0
+                    res.success(rows > 0)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update after permission granted: ${e.message}", e)
+                    res.success(false)
+                }
+            } else {
+                // User denied or dismissed the system prompt
+                res.success(false)
+            }
+            return true
+        }
+        return false
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -117,10 +184,60 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         if (assetId == null || newName == null) {
             result.error("INVALID_ARGUMENT", "assetId and newName are required", null); return
         }
-        val updated = updateAcrossCollections(assetId) { _, values ->
-            values.put(MediaStore.MediaColumns.DISPLAY_NAME, newName)
+
+        val ctx = context ?: run { result.error("NO_CONTEXT", "no context", null); return }
+        val uri = findAssetUri(ctx, assetId)
+        if (uri == null) {
+            result.success(false); return
         }
-        result.success(updated)
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, newName)
+        }
+
+        try {
+            val rows = ctx.contentResolver.update(uri, values, null, null)
+            if (rows > 0) {
+                result.success(true)
+                return
+            }
+        } catch (secEx: SecurityException) {
+            // Android 11+ (API 30+) Scoped Storage consent prompt for other apps' media
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val act = activity
+                if (act != null) {
+                    val pendingIntent = MediaStore.createWriteRequest(ctx.contentResolver, listOf(uri))
+                    pendingResult = result
+                    pendingUri = uri
+                    pendingValues = values
+                    act.startIntentSenderForResult(
+                        pendingIntent.intentSender,
+                        REQUEST_CODE_WRITE_PERMISSION,
+                        null, 0, 0, 0
+                    )
+                    return
+                }
+            } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && secEx is RecoverableSecurityException) {
+                // Android 10 (API 29) RecoverableSecurityException
+                val act = activity
+                if (act != null) {
+                    pendingResult = result
+                    pendingUri = uri
+                    pendingValues = values
+                    act.startIntentSenderForResult(
+                        secEx.userAction.actionIntent.intentSender,
+                        REQUEST_CODE_WRITE_PERMISSION,
+                        null, 0, 0, 0
+                    )
+                    return
+                }
+            }
+            Log.w(TAG, "renameAsset SecurityException for non-owned media: ${secEx.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "renameAsset error: ${e.message}", e)
+        }
+
+        result.success(false)
     }
 
     private fun moveAsset(call: MethodCall, result: MethodChannel.Result) {
@@ -136,22 +253,49 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 "assetId and targetRelativePath are required", null,
             ); return
         }
-        val updated = updateAcrossCollections(assetId) { _, values ->
-            values.put(MediaStore.MediaColumns.RELATIVE_PATH, "$targetRelativePath/")
+        val ctx = context ?: run { result.error("NO_CONTEXT", "no context", null); return }
+        val uri = findAssetUri(ctx, assetId)
+        if (uri == null) {
+            result.success(false); return
         }
-        result.success(updated)
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "$targetRelativePath/")
+        }
+
+        try {
+            val rows = ctx.contentResolver.update(uri, values, null, null)
+            if (rows > 0) {
+                result.success(true)
+                return
+            }
+        } catch (secEx: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val act = activity
+                if (act != null) {
+                    val pendingIntent = MediaStore.createWriteRequest(ctx.contentResolver, listOf(uri))
+                    pendingResult = result
+                    pendingUri = uri
+                    pendingValues = values
+                    act.startIntentSenderForResult(
+                        pendingIntent.intentSender,
+                        REQUEST_CODE_WRITE_PERMISSION,
+                        null, 0, 0, 0
+                    )
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "moveAsset error: ${e.message}", e)
+        }
+        result.success(false)
     }
 
     /**
-     * Runs [fill] against each MediaStore collection until one reports an
-     * updated row. photo_manager exposes bare MediaStore ids without the
-     * owning collection, so the collection must be discovered here.
+     * Resolves the canonical MediaStore content Uri (Images, Video, or Audio)
+     * for the given numeric MediaStore _id.
      */
-    private inline fun updateAcrossCollections(
-        assetId: Long,
-        fill: (Uri, ContentValues) -> Unit,
-    ): Boolean {
-        val ctx = context ?: return false
+    private fun findAssetUri(ctx: Context, assetId: Long): Uri? {
         val collections = listOf(
             MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
             MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
@@ -159,30 +303,23 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         )
         for (collection in collections) {
             val uri = ContentUris.withAppendedId(collection, assetId)
-            val values = ContentValues()
-            fill(uri, values)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-            val rows = try {
-                ctx.contentResolver.update(uri, values, null, null)
+            try {
+                ctx.contentResolver.query(
+                    uri,
+                    arrayOf(MediaStore.MediaColumns._ID),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        return uri
+                    }
+                }
             } catch (_: Exception) {
                 continue
             }
-            if (rows > 0) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    runCatching {
-                        ctx.contentResolver.update(
-                            uri,
-                            ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                            null, null,
-                        )
-                    }
-                }
-                return true
-            }
         }
-        return false
+        return null
     }
 
     private fun guessMime(name: String): String {
