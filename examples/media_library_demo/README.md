@@ -46,7 +46,7 @@ Saving into the gallery uses **MediaStore / PhotoKit insert APIs**, not broad wr
 ```bash
 cd examples/media_library_demo
 uv sync
-uv run flet run src/main.py
+uv run flet run src/main.py --android
 ```
 
 ```toml

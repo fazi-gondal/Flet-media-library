@@ -28,7 +28,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
     )
     album_field = ft.TextField(
         label="Target Album",
-        value="MediaLibraryDemo",
+        value="DCIM",
         dense=True,
         width=200,
         prefix_icon=ft.Icons.FOLDER_SPECIAL_ROUNDED,

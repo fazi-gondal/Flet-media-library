@@ -43,7 +43,7 @@ def build_tools(page: ft.Page, session: DemoSession) -> ft.Control:
     )
     audio_album_field = ft.TextField(
         label="Audio Album (optional)",
-        value="MediaLibraryDemo",
+        value="",
         dense=True,
         expand=True,
     )
