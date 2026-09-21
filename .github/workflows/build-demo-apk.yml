@@ -35,6 +35,8 @@ env:
   UV_PYTHON: "3.12"
   PYTHONUTF8: "1"
   FLET_CLI_NO_RICH_OUTPUT: "1"
+  # Suppress the Flet CLI update-check HTTP call that causes 504 failures in CI
+  FLET_DISABLE_UPDATE_CHECK: "1"
 
 jobs:
   build-apk:
@@ -162,18 +164,35 @@ jobs:
       # --no-sync prevents uv from reverting the pyproject.toml wheel patch.
       - name: Build Android APK
         working-directory: examples/media_library_demo
+        shell: bash
         run: |
           set -euo pipefail
-          # No --source-packages: the wheel already ships flutter/flet_media_library/
-          # in the correct namespace package layout that flet build expects.
-          # Passing the raw Flutter dir as --source-packages caused:
-          #   "No such file or directory: flutter-packages/flet_media_library/lib/flet_media_library.dart"
-          uv run --python 3.12 --no-sync flet build apk \
-            --module-name main \
-            --split-per-abi \
-            --arch arm64-v8a \
-            --yes \
-            --verbose
+          # No --source-packages: the wheel ships flutter/flet_media_library/ in the
+          # correct namespace so flet build can resolve the Flutter plugin.
+          #
+          # Retry loop: the Flet CLI makes an outbound HTTP call (update check /
+          # asset download) that occasionally returns 504 on fresh CI runners.
+          # FLET_DISABLE_UPDATE_CHECK suppresses it when supported; the loop
+          # catches it when not.
+          for attempt in 1 2 3; do
+            echo "=== flet build attempt ${attempt}/3 ==="
+            if uv run --python 3.12 --no-sync flet build apk \
+                --module-name main \
+                --split-per-abi \
+                --arch arm64-v8a \
+                --yes \
+                --verbose; then
+              echo "Build succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            if [ "${attempt}" -lt 3 ]; then
+              echo "Build failed on attempt ${attempt}; cleaning and retrying in 30 s..." >&2
+              rm -rf build .flet* || true
+              sleep 30
+            fi
+          done
+          echo "flet build apk failed after 3 attempts." >&2
+          exit 1
 
       - name: Verify APK output
         working-directory: examples/media_library_demo
