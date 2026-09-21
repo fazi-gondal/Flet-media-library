@@ -21,6 +21,7 @@ Built for **Flet 1.0** with a **local editable** dependency on the package sourc
 - [Building Standalone Mobile Binaries](#building-standalone-mobile-binaries)
   - [Android APK Build](#android-apk-build)
   - [Automated CI / GitHub Actions](#automated-ci--github-actions)
+  - [Pushing & Managing Build Tags](#pushing--managing-build-tags)
   - [iOS Build](#ios-build)
 - [Key Package APIs Quick Reference](#key-package-apis-quick-reference)
 - [Important Platform Notes](#important-platform-notes)
@@ -182,8 +183,52 @@ The compiled APK will be output to:
 
 This repository includes an automated workflow in [`.github/workflows/build-demo-apk.yml`](../../.github/workflows/build-demo-apk.yml) with network retry handling:
 
-- **Push / PR / Manual Dispatch**: Compiles and uploads the APK and `.zip` archive as workflow artifacts.
-- **Git Tags (`v*`)**: Automatically attaches the arm64-v8a APK to the GitHub Release.
+- **Git Tags (`v*`)**: Automatically compiles the demo APK, packages a `.zip` archive, and publishes them directly to a **GitHub Release**.
+- **Manual Dispatch (`workflow_dispatch`)**: Can be triggered on-demand from the GitHub Actions tab anytime without creating a release.
+
+---
+
+### Pushing & Managing Build Tags
+
+To trigger or manage automated demo APK builds on GitHub, use the following `git` commands:
+
+#### 1. Push a Tag to Trigger Build & Release
+
+```bash
+# Create an annotated tag (e.g. v1.0.1)
+git tag -a v1.0.1 -m "Release v1.0.1"
+
+# Push the tag to GitHub (this triggers the APK build workflow)
+git push origin v1.0.1
+```
+
+> [!TIP]
+> Pushing any tag matching `v*` runs `.github/workflows/build-demo-apk.yml`, compiles the `arm64-v8a` APK, and attaches the APK and ZIP files to the corresponding GitHub Release automatically.
+
+#### 2. Delete a Tag (Cancel or Retract Build)
+
+If you created a tag by mistake or need to delete a release tag:
+
+```bash
+# Step 1: Delete the tag locally
+git tag -d v1.0.1
+
+# Step 2: Delete the tag from the remote GitHub repository
+git push origin --delete v1.0.1
+```
+
+#### 3. Update / Move an Existing Tag
+
+If you made a commit and need to point an existing tag to the latest commit and re-trigger CI:
+
+```bash
+# Force-update the tag locally to the current commit
+git tag -fa v1.0.1 -m "Release v1.0.1 (updated)"
+
+# Force-push the updated tag to GitHub (re-triggers build)
+git push origin -f v1.0.1
+```
+
 
 ### iOS Build
 
