@@ -32,7 +32,7 @@ permissions:
   contents: read
 
 env:
-  UV_PYTHON: "3.12"
+  UV_PYTHON: "3.14"
   PYTHONUTF8: "1"
   FLET_CLI_NO_RICH_OUTPUT: "1"
   # Suppress the Flet CLI update-check HTTP call that causes 504 failures in CI
@@ -50,12 +50,12 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
@@ -84,7 +84,7 @@ jobs:
 
       - name: Install demo dependencies
         working-directory: examples/media_library_demo
-        run: uv sync --python 3.12
+        run: uv sync --python 3.14
 
       # Rewrite the flet-media-library dependency line in pyproject.toml to
       # point at the local wheel via a file:// URI so flet build can resolve it.
@@ -176,7 +176,7 @@ jobs:
           # catches it when not.
           for attempt in 1 2 3; do
             echo "=== flet build attempt ${attempt}/3 ==="
-            if uv run --python 3.12 --no-sync flet build apk \
+            if uv run --python 3.14 --no-sync flet build apk \
                 --module-name main \
                 --split-per-abi \
                 --arch arm64-v8a \
