@@ -141,7 +141,7 @@ def main(page: ft.Page) -> None:
                 padding=16,
                 alignment=ft.Alignment.CENTER,
                 content=ft.Card(
-                    color=ft.Colors.ERROR_CONTAINER,
+                    bgcolor=ft.Colors.ERROR_CONTAINER,
                     content=ft.Container(
                         padding=16,
                         content=ft.Column(

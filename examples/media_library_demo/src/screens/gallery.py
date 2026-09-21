@@ -468,32 +468,18 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
             )
             return
 
-        # flet-video exposes an Audio control on Android that wraps ExoPlayer.
-        # Fall back to a message if flet-video is not installed.
-        if HAS_VIDEO and hasattr(ftv, "Audio"):
-            audio_ctrl = ftv.Audio(
-                src=uri,
+        # flet-video uses media_kit / ExoPlayer which plays audio files directly
+        if HAS_VIDEO:
+            player = ftv.Video(
+                playlist=[ftv.VideoMedia(uri)],
                 autoplay=True,
+                height=60,
+                fill_color=ft.Colors.TRANSPARENT,
             )
-            playing = {"on": True}
-            play_icon_ref = ft.Ref[ft.IconButton]()
-
-            def toggle_audio(e: ft.ControlEvent) -> None:
-                try:
-                    if playing["on"]:
-                        audio_ctrl.pause()
-                        play_icon_ref.current.icon = ft.Icons.PLAY_ARROW_ROUNDED
-                    else:
-                        audio_ctrl.play()
-                        play_icon_ref.current.icon = ft.Icons.PAUSE_ROUNDED
-                    playing["on"] = not playing["on"]
-                    page.update()
-                except Exception:  # noqa: BLE001
-                    pass
 
             def close_audio(e: ft.ControlEvent) -> None:
                 try:
-                    audio_ctrl.pause()
+                    player.pause()
                 except Exception:  # noqa: BLE001
                     pass
                 page.pop_dialog()
@@ -509,16 +495,9 @@ def build_gallery(page: ft.Page, session: DemoSession) -> ft.Control:
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=16,
                         controls=[
-                            audio_ctrl,
                             ft.Icon(ft.Icons.MUSIC_NOTE_ROUNDED, size=64, color=ft.Colors.PRIMARY),
                             ft.Text(title, size=13, text_align=ft.TextAlign.CENTER),
-                            ft.IconButton(
-                                ref=play_icon_ref,
-                                icon=ft.Icons.PAUSE_ROUNDED,
-                                icon_size=48,
-                                tooltip="Play / Pause",
-                                on_click=toggle_audio,
-                            ),
+                            ft.Container(content=player, height=60),
                         ],
                     ),
                     actions=[ft.TextButton("Close", on_click=close_audio)],

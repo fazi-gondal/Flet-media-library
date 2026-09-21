@@ -96,11 +96,14 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 ),
             )
 
-        recorder = far.AudioRecorder(
-            audio_encoder=far.AudioEncoder.AAC,
-            suppress_noise=True,
-        )
-        page.services.append(recorder)
+        recorder = next((s for s in getattr(page, "services", []) if isinstance(s, far.AudioRecorder)), None)
+        if recorder is None:
+            config = far.AudioRecorderConfiguration(
+                encoder=far.AudioEncoder.AACLC,
+                suppress_noise=True,
+            )
+            recorder = far.AudioRecorder(configuration=config)
+            page.services.append(recorder)
 
         rec_btn_ref = ft.Ref[ft.IconButton]()
         level_bar = ft.ProgressBar(value=0, width=200, color=ft.Colors.PRIMARY, bgcolor=ft.Colors.OUTLINE_VARIANT)
@@ -111,16 +114,21 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 rec_state["seconds"] += 1
                 m, s = divmod(rec_state["seconds"], 60)
                 rec_timer_text.value = f"{m:02d}:{s:02d}"
-                # Animate level bar with amplitude if available
-                try:
-                    amp = await recorder.get_input_level()
-                    level_bar.value = min(1.0, abs(amp or 0) / 100.0)
-                except Exception:  # noqa: BLE001
-                    pass
                 page.update()
 
         async def toggle_recording(e: ft.ControlEvent) -> None:
             if not rec_state["recording"]:
+                try:
+                    if hasattr(recorder, "has_permission"):
+                        has_perm = await recorder.has_permission()
+                        if not has_perm:
+                            rec_status.value = "Microphone permission denied"
+                            rec_status.color = ft.Colors.ERROR
+                            page.update()
+                            return
+                except Exception:
+                    pass
+
                 # Start recording to a temp file
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 tmp_path = Path(tempfile.gettempdir()) / f"mldemo_rec_{ts}.m4a"
@@ -134,6 +142,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     rec_btn_ref.current.icon_color = ft.Colors.ERROR
                     rec_status.value = "Recording… tap ■ to stop"
                     rec_status.color = ft.Colors.ERROR
+                    level_bar.value = None  # pulse progress bar
                     rec_state["timer_task"] = page.run_task(_tick_timer)
                 except Exception as ex:  # noqa: BLE001
                     rec_status.value = f"Could not start recording: {ex}"
@@ -141,7 +150,9 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
             else:
                 # Stop recording
                 try:
-                    await recorder.stop_recording()
+                    out = await recorder.stop_recording()
+                    if out:
+                        rec_state["tmp_path"] = out
                 except Exception:  # noqa: BLE001
                     pass
                 rec_state["recording"] = False
