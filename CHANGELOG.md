@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Permissions**: query and return per-media-type states (image/video/audio) instead of mirroring one aggregate state across all requested types.
 - **Native concurrency**: Android write-consent flows (rename/move) reject concurrent pending operations instead of overwriting the first `MethodChannel.Result`; pending state is cleared cleanly on activity detach.
-- **Demo recording path**: merged from main (`v1.0.3`) — avoid `Path.resolve()` on Android `FLET_APP_STORAGE_*` env vars (fixes MediaMuxer doubled-path `ENOENT` crash).
+- **Demo recording path**: absolute writable temp only via `recording_output_path()` / `get_app_temp_dir()`; never `Path.resolve()` on `FLET_APP_STORAGE_*` (fixes MediaMuxer doubled-path `ENOENT`). Demo-only — not a library package bug.
 
 ### Added
 - `get_thumbnail_path()` — cached local JPEG path for gallery-scale use without Base64 over the Flet boundary.
