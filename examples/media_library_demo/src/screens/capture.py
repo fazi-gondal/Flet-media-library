@@ -132,11 +132,19 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     page.update()
                     return
 
-                # Start recording to a guaranteed-writable temp directory
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                target_dir = get_app_temp_dir()
-                target_dir.mkdir(parents=True, exist_ok=True)
-                tmp_path = target_dir / f"mldemo_rec_{ts}.m4a"
+                # Start recording to a guaranteed-writable absolute path.
+                # Never pass a relative path: on Android Flet cwd can be the
+                # assets tree, which produces nested .../assets/data/data/...
+                # paths and MediaMuxer ENOENT crashes.
+                from services.paths import recording_output_path
+
+                tmp_path = recording_output_path()
+                if not tmp_path.is_absolute():
+                    rec_status.value = f"Refusing non-absolute record path: {tmp_path}"
+                    rec_status.color = ft.Colors.ERROR
+                    page.update()
+                    return
+                tmp_path.parent.mkdir(parents=True, exist_ok=True)
                 rec_state["tmp_path"] = str(tmp_path)
                 rec_state["seconds"] = 0
                 rec_timer_text.value = "00:00"
