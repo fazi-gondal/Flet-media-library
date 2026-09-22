@@ -12,7 +12,7 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 [![Author: Fazi Gondal](https://img.shields.io/badge/Author-Fazi_Gondal-orange.svg)](https://github.com/fazi-gondal)
 [![Download Demo APK](https://img.shields.io/badge/Download_APK-GitHub_Releases-brightgreen?logo=android&logoColor=white)](https://github.com/fazi-gondal/Flet-media-library/releases)
 
-**Current Version:** `1.0.2` | **PyPI Package:** [`flet-media-library`](https://pypi.org/project/flet-media-library/)
+**Current Version:** `1.1.0` | **PyPI Package:** [`flet-media-library`](https://pypi.org/project/flet-media-library/)
 
 > **Developed & Maintained by**: [Fazi Gondal](https://github.com/fazi-gondal)  
 > **Try the App**: Download the pre-built [Media Library Demo APK from GitHub Releases](https://github.com/fazi-gondal/Flet-media-library/releases)
@@ -37,6 +37,7 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
   - [Saving Media (Images, Videos, Audio)](#saving-media-images-videos-audio)
   - [Mutations (Rename, Move, Copy, Delete)](#mutations-rename-move-copy-delete)
   - [Live Media Change Notifications](#live-media-change-notifications)
+  - [Platform Capabilities](#platform-capabilities)
   - [Cache Management](#cache-management)
 - [Data Models](#data-models)
 - [Exception Hierarchy](#exception-hierarchy)
@@ -60,10 +61,12 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 - **Direct Public Media Ingestion**: Save photos directly to **`DCIM/`** and **`Pictures/`**, videos to **`Movies/`** and **`DCIM/`**, and audio recordings directly to **`Music/`**.
 - **Purpose-Specific Media Access**: Compliant with Google Play and Apple App Store policies. Never asks for `MANAGE_EXTERNAL_STORAGE`.
 - **Custom Android Kotlin Engine**: Native fallbacks for operations unsupported by `photo_manager`: audio saving to `Music/`, in-place file renaming, and relative folder moving.
-- **Fast Base64 Thumbnails**: Efficiently generates thumbnails for both pictures and video frames directly into Flet `ft.Image(src=...)`.
+- **Fast Thumbnails**: Base64 JPEG for simple `ft.Image` use, plus **`get_thumbnail_path()`** for large galleries (cached file path, no Base64 over the bridge).
+- **Per-type permissions**: Image, video, and audio states are queried independently (important on Android 13+ granular `READ_MEDIA_*`).
+- **Capability discovery**: **`get_capabilities()`** reports what the current platform supports (`supports_audio_save`, `supports_move`, `supports_rename`, etc.).
 - **Album & Bucket Browsing**: Fetch standard and custom user albums (`Camera`, `Screenshots`, `Download`, `Music`, `WhatsApp`, etc.).
-- **Rich Filtering & Sorting**: Sort by date added, date modified, size, duration, or filename, with pagination (`limit`, `offset`, `has_more`).
-- **In-Place Gallery Mutations**: Delete single or batch assets, rename files, copy assets between albums, and move assets across directories.
+- **Rich Filtering & Sorting**: Sort by date added, date modified, size, duration, or filename; optional **date range** filters; pagination (`limit`, `offset`, `has_more`).
+- **In-Place Gallery Mutations**: Delete single or batch assets, rename files, copy assets between albums, and move assets across directories (Android write-consent flows are serialized safely).
 - **Live Change Events**: Subscribe to real-time additions, deletions, or edits in the device media store.
 - **Structured Error Handling**: Dedicated typed exceptions (`PermissionRequiredError`, `UnsupportedError`, `AssetNotFoundError`, etc.).
 
@@ -191,7 +194,7 @@ Pre-compiled, ready-to-sideload Android APKs (`.apk`) are automatically compiled
 👉 **[Download the latest Demo APK from GitHub Releases](https://github.com/fazi-gondal/Flet-media-library/releases)**
 
 ### Features in the Demo App:
-- **Media Gallery**: High-performance grid with base64 thumbnails for photos and videos.
+- **Media Gallery**: High-performance grid with thumbnails for photos and videos.
 - **In-App Media Player**: Built-in video and audio playback dialogs (`flet-video` / ExoPlayer).
 - **Camera & Microphone Capture**: Live camera preview (`flet-camera`) and audio recorder (`flet-audio-recorder`) saving directly to gallery and `Music/Recordings`.
 - **File Management**: Move files between folders, rename with extensions, and batch-delete items.
@@ -222,15 +225,18 @@ page.update()
 #### `check_permissions(media_types: list[str] | None = None) -> MediaPermissionStatus`
 Checks the current permission status without prompting the user.
 - **Parameters**: `media_types` — List of types to check: `["image", "video", "audio"]` (defaults to all).
-- **Returns**: `MediaPermissionStatus` object with per-type status.
+- **Returns**: `MediaPermissionStatus` with a **per-type** `states` map. On Android 13+, image/video/audio can differ (granular `READ_MEDIA_*`).
 
 ```python
-status = await media.check_permissions(["image", "video"])
-print("Images status:", status["image"])  # "granted", "denied", "limited", etc.
+status = await media.check_permissions(["image", "video", "audio"])
+print("Images:", status["image"])   # granted | limited | denied | ...
+print("Videos:", status["video"])
+print("Audio:", status["audio"])
+print("can_request:", status.can_request)
 ```
 
 #### `request_permissions(media_types: list[str] | None = None) -> MediaPermissionStatus`
-Prompts the OS system permission dialog requesting access for the specified media types.
+Prompts the OS system permission dialog requesting access for the specified media types, then **re-checks each type** so the returned map reflects actual outcomes.
 - **Parameters**: `media_types` — `["image", "video", "audio"]` (request only what you need).
 - **Returns**: `MediaPermissionStatus`.
 
@@ -284,9 +290,11 @@ async def get_assets(
     album: str | None = None,           # Album ID from get_albums(), or None for root
     mime_type: str | None = None,       # Exact MIME filter (e.g. "video/mp4", Android only)
     limit: int = 50,                    # 1 to 500 items per page
-    offset: int = 0,                    # Item offset to skip
+    offset: int = 0,                    # Item offset to skip (re-query from 0 after change events)
     sort_by: str = "date_added",        # "date_added", "date_modified", "display_name", "size", "duration"
     sort_order: str = "desc",           # "desc" | "asc"
+    min_date_added: int | None = None,  # Inclusive unix seconds (global queries only)
+    max_date_added: int | None = None,  # Inclusive unix seconds (global queries only)
 ) -> MediaAssetPage
 ```
 
@@ -321,16 +329,24 @@ print(f"{asset.display_name} - {asset.width}x{asset.height} - {asset.size} bytes
 
 #### `get_thumbnail(asset_id: str, width: int = 200, height: int = 200, quality: int = 90) -> str`
 Generates a base64-encoded JPEG thumbnail for an image or a video frame.
-- **Parameters**:
-  - `asset_id`: ID of the asset.
-  - `width`: Desired thumbnail width in pixels.
-  - `height`: Desired thumbnail height in pixels.
-  - `quality`: JPEG compression quality (1–100).
+- **Parameters**: `asset_id`, `width`, `height`, `quality` (1–100).
 - **Returns**: Base64 string suitable for `ft.Image(src_base64=...)`.
+- Prefer **`get_thumbnail_path`** when rendering many items (gallery grids).
 
 ```python
 thumb_b64 = await media.get_thumbnail(asset.id, width=150, height=150, quality=85)
 image_ctrl = ft.Image(src_base64=thumb_b64, width=150, height=150)
+```
+
+#### `get_thumbnail_path(asset_id: str, width: int = 200, height: int = 200, quality: int = 90) -> str`
+Writes a JPEG thumbnail to a stable local cache file and returns the **filesystem path**.
+- Avoids shipping Base64 through the Python/Dart boundary on every scroll.
+- Cache key includes `asset_id`, size, and quality; cleared by `clear_file_cache()`.
+- Suitable for `ft.Image(src=path)` on mobile.
+
+```python
+path = await media.get_thumbnail_path(asset.id, width=160, height=160)
+image_ctrl = ft.Image(src=path, width=160, height=160, fit=ft.BoxFit.COVER)
 ```
 
 ---
@@ -339,28 +355,32 @@ image_ctrl = ft.Image(src_base64=thumb_b64, width=150, height=150)
 
 Saves local files directly into the platform media gallery using platform MediaStore and PhotoKit insert pipelines. No broad storage permissions required.
 
-#### `save_image(file_path: str, file_name: str | None = None, album: str | None = None) -> MediaAsset`
+> **Destination folder naming:** prefer keyword **`relative_path=`** (e.g. `"Pictures/MyApp"`).  
+> **`album=`** remains as a backward-compatible alias for the same value.
+
+#### `save_image(file_path: str, file_name: str | None = None, *, relative_path: str | None = None, album: str | None = None) -> MediaAsset`
 Saves an image file directly into public gallery storage (**`Pictures/`** or **`DCIM/`**).
 - **Public Destinations**:
-  - **`Pictures/<Subfolder>`** (e.g. `album="Pictures/MyApp"`)
-  - **`DCIM/<Subfolder>`** (e.g. `album="DCIM/Camera"`)
+  - **`Pictures/<Subfolder>`** (e.g. `relative_path="Pictures/MyApp"`)
+  - **`DCIM/<Subfolder>`** (e.g. `relative_path="DCIM/Camera"`)
 - **Backend**: Uses upstream `photo_manager` (`saveImageWithPath`).
 - **Platform Support**: Android & iOS.
 - **Parameters**:
   - `file_path`: Absolute path to source image (e.g. app scratch file or downloaded photo).
   - `file_name`: Optional target filename (e.g. `"snapshot_2026.jpg"`).
-  - `album`: Optional public album folder name (defaults to `"Pictures/FletMediaLibrary"`).
+  - `relative_path`: Preferred destination folder under public storage.
+  - `album`: Legacy alias for `relative_path`.
 
 ```python
 asset = await media.save_image(
     "/data/user/0/com.app/cache/photo.jpg",
     file_name="snapshot_2026.jpg",
-    album="Pictures/MyCameraApp",
+    relative_path="Pictures/MyCameraApp",
 )
 print("Saved image ID:", asset.id)
 ```
 
-#### `save_video(file_path: str, file_name: str | None = None, album: str | None = None) -> MediaAsset`
+#### `save_video(file_path: str, file_name: str | None = None, *, relative_path: str | None = None, album: str | None = None) -> MediaAsset`
 Saves a video file directly into public gallery storage (**`Movies/`** or **`DCIM/`**).
 - **Public Destinations**:
   - **`Movies/<Subfolder>`** (e.g. `album="Movies/MyVideoApp"`)
@@ -380,7 +400,7 @@ asset = await media.save_video(
 )
 ```
 
-#### `save_audio(file_path: str, file_name: str | None = None, album: str | None = None) -> MediaAsset`
+#### `save_audio(file_path: str, file_name: str | None = None, *, relative_path: str | None = None, album: str | None = None) -> MediaAsset`
 Saves an audio file directly into the device's public **`Music/`** folder.
 - **Public Destination**: **`Music/<Subfolder>`** (e.g. `album="Music/Recordings"` or `album="Music/MyPodcasts"`).
 - **Backend**: **Custom Native Android Kotlin Implementation** (`FletMediaLibraryPlugin.kt` writing directly to `MediaStore.Audio.Media`). Upstream `photo_manager` does **not** support saving audio files.
@@ -478,10 +498,36 @@ await media.stop_change_notify()
 
 ---
 
+### Platform Capabilities
+
+#### `get_capabilities() -> dict`
+Returns flags so apps do not hard-code platform gaps.
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `platform` | `str` | `"android"`, `"ios"`, or other |
+| `supports_audio_save` | `bool` | `save_audio` available |
+| `supports_move` | `bool` | `move_asset` available |
+| `supports_rename` | `bool` | `rename_asset` available |
+| `supports_copy` | `bool` | `copy_asset` available |
+| `supports_mime_filter` | `bool` | MIME filter on `get_assets` |
+| `supports_limited_access` | `bool` | Limited picker (iOS 14+ / Android 14+) |
+| `supports_thumbnail_path` | `bool` | `get_thumbnail_path` available |
+| `supports_change_notify` | `bool` | Change notifications |
+| `android_sdk` | `int` | SDK level, or `0` if not Android |
+
+```python
+caps = await media.get_capabilities()
+if caps.get("supports_audio_save"):
+    await media.save_audio(path, file_name="note.m4a", relative_path="Music/Recordings")
+```
+
+---
+
 ### Cache Management
 
 #### `clear_file_cache() -> None`
-Clears internal thumbnail and file caches cached by the underlying plugin.
+Clears internal thumbnail caches (including files created by `get_thumbnail_path`) and plugin file caches.
 
 ```python
 await media.clear_file_cache()

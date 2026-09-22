@@ -1,6 +1,6 @@
 [project]
 name = "flet-media-library"
-version = "1.0.2"
+version = "1.1.0"
 description = "Flet service extension for device media library access (photos, videos, audio) on Android and iOS — albums, assets, thumbnails, permissions, save/delete, and change notifications via photo_manager."
 readme = "README.md"
 license = { text = "MIT" }

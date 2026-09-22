@@ -33,7 +33,7 @@ Built for **Flet 1.0** with a **local editable** dependency on the package sourc
 | Capability | Supported | Description |
 |---|---|---|
 | **Media Browsing** | ✅ Photos, Videos, Audio | Filter by type, browse albums, inspect full metadata |
-| **Thumbnails** | ✅ Images & Videos | Fast base64 thumbnail rendering in responsive grid |
+| **Thumbnails** | ✅ Images & Videos | Base64 and path-based thumbnails (`get_thumbnail` / `get_thumbnail_path`) |
 | **In-App Playback** | ✅ Video & Audio | ExoPlayer playback directly inside modal dialogs |
 | **Camera Capture** | ✅ Photos & Video | Shoot photos or record videos and save directly to gallery |
 | **Mic Recording** | ✅ Audio Notes (.m4a) | Record voice notes with timer and save to `Music/Recordings` |
@@ -50,7 +50,7 @@ Built for **Flet 1.0** with a **local editable** dependency on the package sourc
 
 The Home screen acts as the application's control center and permission supervisor.
 
-- **Check Permissions** (`media.check_permissions`): Queries current authorization state without showing dialogs.
+- **Check Permissions** (`media.check_permissions`): Queries current authorization state **per media type** (image/video/audio can differ on Android 13+) without showing dialogs.
 - **Request Permissions** (`media.request_permissions`): Triggers the native system permission dialog. Exercises least privilege (`["image", "video", "audio"]`).
 - **Present Limited Picker** (`media.present_limited`): On iOS 14+ and Android 14+, opens the OS limited-access photo picker so users can select additional media without granting full gallery access.
 - **Open Settings** (`media.open_settings`): Directly opens the app's permission page in system settings.
@@ -65,7 +65,7 @@ The Gallery tab is a high-performance visual browser for device media.
 - **Album Filtering** (`media.get_albums`): Populates dropdown with actual device albums (`Camera`, `Screenshots`, `Download`, `WhatsApp`, etc.).
 - **Media Type Filtering** (`media.get_assets`): Seamlessly switch between **All**, **Images**, **Videos**, and **Audio**.
 - **Pagination**: Supports high-volume libraries with page-by-page fetching (`limit`, `offset`, and "Load More" button).
-- **Base64 Thumbnails** (`media.get_thumbnail`): Asynchronously fetches JPEG thumbnails for images and video frames.
+- **Thumbnails** (`media.get_thumbnail`): Asynchronously fetches JPEG thumbnails for images and video frames (Base64). Large galleries can use `get_thumbnail_path` from the library for path-based loading.
 - **In-App Video Player** (`flet-video`): Tap any video to launch an embedded video player dialog.
 - **In-App Audio Player** (`flet-video` ExoPlayer): Tap any audio asset to play `.mp3`, `.m4a`, `.wav`, or `.aac` files directly within the app.
 - **Streamlined Move Dialog** (`media.move_asset`): Select any media item and move it to standard directories (`Pictures/Archive`, `DCIM/Camera`, `Music/Recordings`, `Download`, `Movies`) or enter a custom relative path.
@@ -84,7 +84,12 @@ Demonstrates taking new media and saving it directly into the device library usi
   - In-app microphone recording with live elapsed timer (`00:00`).
   - Encodes cleanly with `AudioEncoder.AACLC` (`.m4a`).
   - Pulsing recording activity indicator.
-  - Automatically saves output into Android's shared system `Music/Recordings` directory.
+  - Writes scratch `.m4a` files only to an **absolute writable** app temp/cache directory
+    (`services.paths.recording_output_path` / `get_app_temp_dir`). Relative
+    `FLET_APP_STORAGE_*` values that would resolve under the Flet **assets** tree are
+    rejected (avoids MediaMuxer `ENOENT` crashes).
+  - Automatically saves finished recordings into Android's shared system `Music/Recordings`
+    directory via `save_audio`.
 
 ---
 
@@ -96,7 +101,8 @@ Designed for developer diagnostics, stress-testing, and compliance verification.
 - **Rename Asset Test**: Test renaming display names.
 - **Copy Asset Test** (`media.copy_asset`): Test copying an asset into an album.
 - **Pick & Save Audio**: Pick any local audio file and insert it into the Android MediaStore.
-- **Clear File Cache** (`media.clear_file_cache`): Clears thumbnail and temporary caches.
+- **Clear File Cache** (`media.clear_file_cache`): Clears thumbnail and temporary caches (including `get_thumbnail_path` files).
+- **Platform capabilities** (library API): call `media.get_capabilities()` to discover Android-only features before testing move/rename/save_audio.
 - **Automated Smoke Test Suite**: Executes 8 continuous automated tests in sequence:
   1. Check permissions
   2. Request permissions
@@ -195,11 +201,11 @@ To trigger or manage automated demo APK builds on GitHub, use the following `git
 #### 1. Push a Tag to Trigger Build & Release
 
 ```bash
-# Create an annotated tag (e.g. v1.0.1)
-git tag -a v1.0.1 -m "Release v1.0.1"
+# Create an annotated tag (e.g. v1.1.0)
+git tag -a v1.1.0 -m "Release v1.1.0"
 
 # Push the tag to GitHub (this triggers the APK build workflow)
-git push origin v1.0.1
+git push origin v1.1.0
 ```
 
 > [!TIP]
@@ -211,10 +217,10 @@ If you created a tag by mistake or need to delete a release tag:
 
 ```bash
 # Step 1: Delete the tag locally
-git tag -d v1.0.1
+git tag -d v1.1.0
 
 # Step 2: Delete the tag from the remote GitHub repository
-git push origin --delete v1.0.1
+git push origin --delete v1.1.0
 ```
 
 #### 3. Update / Move an Existing Tag
@@ -223,10 +229,10 @@ If you made a commit and need to point an existing tag to the latest commit and 
 
 ```bash
 # Force-update the tag locally to the current commit
-git tag -fa v1.0.1 -m "Release v1.0.1 (updated)"
+git tag -fa v1.1.0 -m "Release v1.1.0 (updated)"
 
 # Force-push the updated tag to GitHub (re-triggers build)
-git push origin -f v1.0.1
+git push origin -f v1.1.0
 ```
 
 
