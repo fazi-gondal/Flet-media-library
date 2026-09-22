@@ -5,11 +5,16 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
+import wave
 
 import flet as ft
 
 from services.media import DemoSession
 from services.paths import get_app_temp_dir_for_page
+
+REC_SAMPLE_RATE = 44100
+REC_CHANNELS = 1
+REC_SAMPLE_WIDTH = 2
 
 try:
     import flet_camera as fc
@@ -60,10 +65,10 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
     rec_state = {"recording": False, "seconds": 0, "timer_task": None}
     rec_filename_field = ft.TextField(
         label="Recording filename",
-        value=f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a",
+        value=f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav",
         dense=True,
         expand=True,
-        hint_text="e.g. my_voice_note.m4a",
+        hint_text="e.g. my_voice_note.wav",
     )
 
     def _build_recorder_card() -> ft.Control:
@@ -102,7 +107,9 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
         recorder = next((s for s in getattr(page, "services", []) if isinstance(s, far.AudioRecorder)), None)
         if recorder is None:
             config = far.AudioRecorderConfiguration(
-                encoder=far.AudioEncoder.AACLC,
+                encoder=far.AudioEncoder.PCM16BITS,
+                channels=REC_CHANNELS,
+                sample_rate=REC_SAMPLE_RATE,
                 suppress_noise=True,
             )
             recorder = far.AudioRecorder(configuration=config)
@@ -110,6 +117,29 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
 
         rec_btn_ref = ft.Ref[ft.IconButton]()
         level_bar = ft.ProgressBar(value=0, width=200, color=ft.Colors.PRIMARY, bgcolor=ft.Colors.OUTLINE_VARIANT)
+
+        def _next_recording_filename() -> str:
+            return f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+
+        def _normalize_wav_filename(raw: str) -> str:
+            name = Path((raw or "").strip()).name
+            if not name:
+                return _next_recording_filename()
+            path = Path(name)
+            if path.suffix.lower() != ".wav":
+                path = path.with_suffix(".wav")
+            return path.name
+
+        async def _write_wav_file(pcm: bytes, file_name: str) -> Path:
+            target_dir = await get_app_temp_dir_for_page(page)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            path = target_dir / file_name
+            with wave.open(str(path), "wb") as wav:
+                wav.setnchannels(REC_CHANNELS)
+                wav.setsampwidth(REC_SAMPLE_WIDTH)
+                wav.setframerate(REC_SAMPLE_RATE)
+                wav.writeframes(pcm)
+            return path
 
         async def _tick_timer() -> None:
             while rec_state["recording"]:
@@ -135,24 +165,31 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     page.update()
                     return
 
-                # Start recording to a guaranteed-writable absolute path.
-                # Never pass a relative path: on Android Flet cwd can be the
-                # assets tree, which produces nested .../assets/data/data/...
-                # paths and MediaMuxer ENOENT crashes.
-                from services.paths import recording_output_path_for_page
+                pcm_buffer = bytearray()
 
-                tmp_path = await recording_output_path_for_page(page)
-                if not tmp_path.is_absolute():
-                    rec_status.value = f"Refusing non-absolute record path: {tmp_path}"
-                    rec_status.color = ft.Colors.ERROR
-                    page.update()
-                    return
-                tmp_path.parent.mkdir(parents=True, exist_ok=True)
-                rec_state["tmp_path"] = str(tmp_path)
+                def on_stream(e: far.AudioRecorderStreamEvent) -> None:
+                    pcm_buffer.extend(e.chunk)
+
+                recorder.on_stream = on_stream
+                rec_state["pcm_buffer"] = pcm_buffer
+                rec_state["tmp_path"] = ""
                 rec_state["seconds"] = 0
                 rec_timer_text.value = "00:00"
                 try:
-                    await recorder.start_recording(output_path=str(tmp_path))
+                    stream_config = far.AudioRecorderConfiguration(
+                        encoder=far.AudioEncoder.PCM16BITS,
+                        channels=REC_CHANNELS,
+                        sample_rate=REC_SAMPLE_RATE,
+                        suppress_noise=True,
+                    )
+                    started = await recorder.start_recording(configuration=stream_config)
+                    if not started:
+                        rec_status.value = "Could not start recording"
+                        rec_status.color = ft.Colors.ERROR
+                        rec_state["pcm_buffer"] = bytearray()
+                        recorder.on_stream = None
+                        page.update()
+                        return
                     rec_state["recording"] = True
                     rec_btn_ref.current.icon = ft.Icons.STOP_CIRCLE_ROUNDED
                     rec_btn_ref.current.icon_color = ft.Colors.ERROR
@@ -161,18 +198,19 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     level_bar.value = None  # pulse progress bar
                     rec_state["timer_task"] = page.run_task(_tick_timer)
                 except Exception as ex:  # noqa: BLE001
-                    rec_status.value = f"Could not start recording: {ex}\nPath: {tmp_path}"
+                    rec_status.value = f"Could not start recording: {ex}"
                     rec_status.color = ft.Colors.ERROR
-                    rec_state["tmp_path"] = ""  # invalidate so stop path is not stale
+                    rec_state["pcm_buffer"] = bytearray()
+                    recorder.on_stream = None
             else:
                 # Stop recording
                 stop_error: str | None = None
                 try:
-                    out = await recorder.stop_recording()
-                    if out:
-                        rec_state["tmp_path"] = out
+                    await recorder.stop_recording()
                 except Exception as stop_ex:  # noqa: BLE001
                     stop_error = str(stop_ex)
+                finally:
+                    recorder.on_stream = None
                 rec_state["recording"] = False
                 rec_btn_ref.current.icon = ft.Icons.MIC_ROUNDED
                 rec_btn_ref.current.icon_color = ft.Colors.PRIMARY
@@ -181,19 +219,12 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 # Save via the same proven default path as the Tools importer:
                 # no album/relative_path means the native fallback writes to
                 # Music/FletMediaLibrary.
-                raw_path = rec_state.get("tmp_path", "")
-                tmp_path = Path(raw_path) if raw_path else None
-                if not tmp_path or not raw_path:
-                    msg = f"No recording path available{': ' + stop_error if stop_error else ''}"
+                pcm_buffer = rec_state.get("pcm_buffer", bytearray())
+                pcm_bytes = bytes(pcm_buffer)
+                rec_state["pcm_buffer"] = bytearray()
+                if not pcm_bytes:
+                    msg = f"No audio data captured{': ' + stop_error if stop_error else ''}"
                     rec_status.value = msg
-                    rec_status.color = ft.Colors.ERROR
-                    page.update()
-                    return
-                if not tmp_path.exists():
-                    rec_status.value = (
-                        f"Recording file not found: {tmp_path}"
-                        + (f"\nStop error: {stop_error}" if stop_error else "")
-                    )
                     rec_status.color = ft.Colors.ERROR
                     page.update()
                     return
@@ -201,10 +232,12 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 rec_status.color = None
                 page.update()
 
-                fname = rec_filename_field.value.strip() or f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
+                fname = _normalize_wav_filename(rec_filename_field.value)
                 # Refresh filename for next recording
-                rec_filename_field.value = f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
+                rec_filename_field.value = _next_recording_filename()
+                tmp_path: Path | None = None
                 try:
+                    tmp_path = await _write_wav_file(pcm_bytes, fname)
                     asset = await media.save_audio(str(tmp_path), file_name=fname)
                     session.track_owned(asset.id)
                     tmp_path.unlink(missing_ok=True)
@@ -217,6 +250,9 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     rec_status.value = f"Save failed: {ex}"
                     rec_status.color = ft.Colors.ERROR
                     page.show_dialog(ft.SnackBar(content=ft.Text(str(ex))))
+                finally:
+                    if tmp_path is not None:
+                        tmp_path.unlink(missing_ok=True)
 
             page.update()
 

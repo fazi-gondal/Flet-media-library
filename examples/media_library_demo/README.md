@@ -36,7 +36,7 @@ Built for **Flet 1.0** with a **local editable** dependency on the package sourc
 | **Thumbnails** | ✅ Images & Videos | Base64 and path-based thumbnails (`get_thumbnail` / `get_thumbnail_path`) |
 | **In-App Playback** | ✅ Video & Audio | ExoPlayer playback directly inside modal dialogs |
 | **Camera Capture** | ✅ Photos & Video | Shoot photos or record videos and save directly to gallery |
-| **Mic Recording** | ✅ Audio Notes (.m4a) | Record voice notes with timer and save to `Music/FletMediaLibrary` |
+| **Mic Recording** | ✅ Audio Notes (.wav) | Record voice notes with timer and save to `Music/FletMediaLibrary` |
 | **File Mutations** | ✅ Move, Rename, Delete | Move between folders, rename with extension, batch delete |
 | **Permissions** | ✅ Granular & Limited | Check, request, limited picker (Android 14+ / iOS 14+), settings |
 | **Live Updates** | ✅ Real-time Listener | Detect external library changes and refresh automatically |
@@ -82,12 +82,10 @@ Demonstrates taking new media and saving it directly into the device library usi
 - **Video Recording** (`flet-camera` + `media.save_video`): Record video clips with a live recording indicator, then save directly into `Movies/MediaLibraryDemo`.
 - **Microphone Audio Recorder** (`flet-audio-recorder` + `media.save_audio`):
   - In-app microphone recording with live elapsed timer (`00:00`).
-  - Encodes cleanly with `AudioEncoder.AACLC` (`.m4a`).
+  - Streams raw `AudioEncoder.PCM16BITS` chunks and wraps them as `.wav`.
   - Pulsing recording activity indicator.
-  - Writes scratch `.m4a` files only to an **absolute writable** app temp/cache directory
-    (`services.paths.recording_output_path` / `get_app_temp_dir`). Relative
-    `FLET_APP_STORAGE_*` values that would resolve under the Flet **assets** tree are
-    rejected (avoids MediaMuxer `ENOENT` crashes).
+  - Avoids Android `MediaMuxer` file output during recording start.
+  - Writes finished scratch `.wav` files only to an **absolute writable** app temp/cache directory.
   - Automatically saves finished recordings into Android's shared system `Music/FletMediaLibrary`
     directory via `save_audio`, matching the Tools screen audio import path.
 
@@ -267,7 +265,7 @@ thumb_b64 = await media.get_thumbnail(asset_id, width=150, height=150)
 # Saving Media
 img_asset = await media.save_image(temp_path, file_name="photo.jpg", album="Pictures/Demo")
 vid_asset = await media.save_video(temp_path, file_name="clip.mp4", album="Movies/Demo")
-aud_asset = await media.save_audio(temp_path, file_name="audio.m4a")
+aud_asset = await media.save_audio(temp_path, file_name="audio.wav")
 
 # Mutations
 ok = await media.rename_asset(asset_id, "new_title.jpg")

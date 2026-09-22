@@ -1,6 +1,6 @@
 [project]
 name = "media-library-demo"
-version = "1.1.0"
+version = "1.1.1"
 description = "Full-feature demo & manual test harness for flet-media-library"
 readme = "README.md"
 requires-python = ">=3.10"

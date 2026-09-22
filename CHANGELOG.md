@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Physical/emulator integration tests for MediaStore, PhotoKit, permissions, delete confirmation
 - Optional resolved original file-path API for in-app playback
 
+## [1.1.1] - 2026-09-22
+
+### Fixed
+- **Demo audio recording**: Capture screen now uses `flet-audio-recorder` PCM streaming and writes a WAV file before `save_audio()`, avoiding Android `MediaMuxer` file-output crashes at recording start.
+
 ## [1.1.0] - 2026-09-22
 
 ### Fixed

@@ -12,7 +12,7 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 [![Author: Fazi Gondal](https://img.shields.io/badge/Author-Fazi_Gondal-orange.svg)](https://github.com/fazi-gondal)
 [![Download Demo APK](https://img.shields.io/badge/Download_APK-GitHub_Releases-brightgreen?logo=android&logoColor=white)](https://github.com/fazi-gondal/Flet-media-library/releases)
 
-**Current Version:** `1.1.0` | **PyPI Package:** [`flet-media-library`](https://pypi.org/project/flet-media-library/)
+**Current Version:** `1.1.1` | **PyPI Package:** [`flet-media-library`](https://pypi.org/project/flet-media-library/)
 
 > **Developed & Maintained by**: [Fazi Gondal](https://github.com/fazi-gondal)  
 > **Try the App**: Download the pre-built [Media Library Demo APK from GitHub Releases](https://github.com/fazi-gondal/Flet-media-library/releases)
@@ -196,7 +196,7 @@ Pre-compiled, ready-to-sideload Android APKs (`.apk`) are automatically compiled
 ### Features in the Demo App:
 - **Media Gallery**: High-performance grid with thumbnails for photos and videos.
 - **In-App Media Player**: Built-in video and audio playback dialogs (`flet-video` / ExoPlayer).
-- **Camera & Microphone Capture**: Live camera preview (`flet-camera`) and audio recorder (`flet-audio-recorder`) saving directly to gallery and `Music/FletMediaLibrary`.
+- **Camera & Microphone Capture**: Live camera preview (`flet-camera`) and WAV audio recorder (`flet-audio-recorder` PCM streaming) saving directly to gallery and `Music/FletMediaLibrary`.
 - **File Management**: Move files between folders, rename with extensions, and batch-delete items.
 - **Automated Smoke Test**: 1-click test verifying all 8 core package APIs on actual hardware.
 
