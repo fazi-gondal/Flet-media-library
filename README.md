@@ -2,7 +2,7 @@
 
 A high-performance **Flet service extension** for querying, displaying, saving, mutating, and monitoring the device media library from Python on **Android** and **iOS**.
 
-The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://pub.dev/packages/photo_manager) with dedicated native Android Kotlin extensions for saving audio, renaming files, and scoped-storage relative folder moving.
+The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://pub.dev/packages/photo_manager) for cross-platform querying, thumbnails, and saving photos/videos directly to public directories (**`DCIM/`**, **`Pictures/`**, **`Movies/`**), augmented with **custom native Android Kotlin implementations** for saving audio recordings directly to **`Music/`**, renaming assets, and relative directory moving.
 
 [![PyPI - Version](https://img.shields.io/pypi/v/flet-media-library.svg?color=blue)](https://pypi.org/project/flet-media-library/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/flet-media-library.svg)](https://pypi.org/project/flet-media-library/)
@@ -22,6 +22,7 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 ## Table of Contents
 
 - [Key Features](#key-features)
+- [Storage Destinations & Architecture](#storage-destinations--architecture)
 - [Permissions Philosophy (No All-Files Access)](#permissions-philosophy-no-all-files-access)
   - [Permission Matrix](#permission-matrix)
   - [Android Manifest Declarations](#android-manifest-declarations)
@@ -56,8 +57,9 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 
 ## Key Features
 
+- **Direct Public Media Ingestion**: Save photos directly to **`DCIM/`** and **`Pictures/`**, videos to **`Movies/`** and **`DCIM/`**, and audio recordings directly to **`Music/`**.
 - **Purpose-Specific Media Access**: Compliant with Google Play and Apple App Store policies. Never asks for `MANAGE_EXTERNAL_STORAGE`.
-- **Broad Media Format Support**: Handles photos, videos, and audio files across Android and iOS.
+- **Custom Android Kotlin Engine**: Native fallbacks for operations unsupported by `photo_manager`: audio saving to `Music/`, in-place file renaming, and relative folder moving.
 - **Fast Base64 Thumbnails**: Efficiently generates thumbnails for both pictures and video frames directly into Flet `ft.Image(src=...)`.
 - **Album & Bucket Browsing**: Fetch standard and custom user albums (`Camera`, `Screenshots`, `Download`, `Music`, `WhatsApp`, etc.).
 - **Rich Filtering & Sorting**: Sort by date added, date modified, size, duration, or filename, with pagination (`limit`, `offset`, `has_more`).
@@ -66,6 +68,24 @@ The Python API is Flet-native, powered on Flutter by [`photo_manager`](https://p
 - **Structured Error Handling**: Dedicated typed exceptions (`PermissionRequiredError`, `UnsupportedError`, `AssetNotFoundError`, etc.).
 
 ---
+
+## Storage Destinations & Architecture
+
+`flet-media-library` saves media directly into standard Android and iOS public directories via native platform MediaStore and PhotoKit APIs:
+
+| Operation | Public Storage Destination | Under the Hood Implementation | Platform Support |
+|---|---|---|---|
+| **Save Photo** (`save_image`) | **`DCIM/`** or **`Pictures/`** | `photo_manager` (`saveImageWithPath`) | Android & iOS |
+| **Save Video** (`save_video`) | **`Movies/`** or **`DCIM/`** | `photo_manager` (`saveVideo`) | Android & iOS |
+| **Save Audio** (`save_audio`) | **`Music/`** (e.g. `Music/Recordings/`) | **Custom Native Kotlin** (`MediaStore.Audio`) | **Android Only** |
+| **Rename Asset** (`rename_asset`) | Renames display name in-place | **Custom Native Kotlin** (`MediaStore` update) | **Android Only** |
+| **Move Asset** (`move_asset`) | Moves between public albums/folders | **Custom Native Kotlin** (`RELATIVE_PATH` update) | **Android Only** |
+| **Delete Assets** (`delete_assets`) | Deletes from system gallery | `photo_manager` (`deleteWithIds`) | Android & iOS |
+
+> [!IMPORTANT]
+> **Custom Kotlin Implementation on Android:**  
+> Upstream Flutter `photo_manager` lacks APIs to **save audio**, **rename assets**, or **move assets between folders**. To provide these essential features on Android without requiring dangerous all-files access (`MANAGE_EXTERNAL_STORAGE`), `flet-media-library` includes custom native Android Kotlin code (`FletMediaLibraryPlugin.kt`).  
+> Consequently, `save_audio`, `rename_asset`, and `move_asset` are **Android-only features**. On iOS, calling these methods cleanly raises `UnsupportedError`.
 
 ## Permissions Philosophy (No All-Files Access)
 
@@ -317,13 +337,19 @@ image_ctrl = ft.Image(src_base64=thumb_b64, width=150, height=150)
 
 ### Saving Media (Images, Videos, Audio)
 
-Saves local files directly into the platform media gallery using platform MediaStore / PhotoKit insert pipelines.
+Saves local files directly into the platform media gallery using platform MediaStore and PhotoKit insert pipelines. No broad storage permissions required.
 
 #### `save_image(file_path: str, file_name: str | None = None, album: str | None = None) -> MediaAsset`
-Saves an image file into the device gallery.
-- `file_path`: Absolute path to source image.
-- `file_name`: Optional target filename (e.g. `"my_snapshot.jpg"`).
-- `album`: Optional album folder name (e.g. `"Pictures/MyApp"`).
+Saves an image file directly into public gallery storage (**`Pictures/`** or **`DCIM/`**).
+- **Public Destinations**:
+  - **`Pictures/<Subfolder>`** (e.g. `album="Pictures/MyApp"`)
+  - **`DCIM/<Subfolder>`** (e.g. `album="DCIM/Camera"`)
+- **Backend**: Uses upstream `photo_manager` (`saveImageWithPath`).
+- **Platform Support**: Android & iOS.
+- **Parameters**:
+  - `file_path`: Absolute path to source image (e.g. app scratch file or downloaded photo).
+  - `file_name`: Optional target filename (e.g. `"snapshot_2026.jpg"`).
+  - `album`: Optional public album folder name (defaults to `"Pictures/FletMediaLibrary"`).
 
 ```python
 asset = await media.save_image(
@@ -335,7 +361,16 @@ print("Saved image ID:", asset.id)
 ```
 
 #### `save_video(file_path: str, file_name: str | None = None, album: str | None = None) -> MediaAsset`
-Saves a video file into the device gallery.
+Saves a video file directly into public gallery storage (**`Movies/`** or **`DCIM/`**).
+- **Public Destinations**:
+  - **`Movies/<Subfolder>`** (e.g. `album="Movies/MyVideoApp"`)
+  - **`DCIM/<Subfolder>`** (e.g. `album="DCIM/Camera"`)
+- **Backend**: Uses upstream `photo_manager` (`saveVideo`).
+- **Platform Support**: Android & iOS.
+- **Parameters**:
+  - `file_path`: Absolute path to source video file.
+  - `file_name`: Optional target filename (e.g. `"clip.mp4"`).
+  - `album`: Optional public folder name (defaults to `"Movies/FletMediaLibrary"`).
 
 ```python
 asset = await media.save_video(
@@ -346,7 +381,14 @@ asset = await media.save_video(
 ```
 
 #### `save_audio(file_path: str, file_name: str | None = None, album: str | None = None) -> MediaAsset`
-Saves an audio file into the device gallery (**Android only**; raises `UnsupportedError` on iOS).
+Saves an audio file directly into the device's public **`Music/`** folder.
+- **Public Destination**: **`Music/<Subfolder>`** (e.g. `album="Music/Recordings"` or `album="Music/MyPodcasts"`).
+- **Backend**: **Custom Native Android Kotlin Implementation** (`FletMediaLibraryPlugin.kt` writing directly to `MediaStore.Audio.Media`). Upstream `photo_manager` does **not** support saving audio files.
+- **Platform Support**: **Android Only** (raises `UnsupportedError` on iOS).
+- **Parameters**:
+  - `file_path`: Absolute path to source audio file (e.g. `.m4a`, `.mp3`, `.wav`, `.aac`).
+  - `file_name`: Target filename (e.g. `"recording_01.m4a"`).
+  - `album`: Target subfolder within `Music` (defaults to `"Music/FletMediaLibrary"`).
 
 ```python
 asset = await media.save_audio(
@@ -354,6 +396,7 @@ asset = await media.save_audio(
     file_name="recording_01.m4a",
     album="Music/Recordings",
 )
+print(f"Audio indexed in Music/Recordings: {asset.display_name} (ID: {asset.id})")
 ```
 
 ---
@@ -361,7 +404,9 @@ asset = await media.save_audio(
 ### Mutations (Rename, Move, Copy, Delete)
 
 #### `delete_asset(asset_id: str) -> bool`
-Deletes a single asset.
+Deletes a single asset from the device gallery.
+- **Backend**: `photo_manager` (`deleteWithIds`).
+- **Platform Support**: Android & iOS.
 - **Returns**: `True` if successfully deleted, `False` if user cancelled system dialog.
 
 ```python
@@ -371,7 +416,9 @@ if ok:
 ```
 
 #### `delete_assets(asset_ids: list[str]) -> list[str]`
-Batch deletes multiple assets.
+Batch deletes multiple assets in a single native system confirmation.
+- **Backend**: `photo_manager` (`deleteWithIds`).
+- **Platform Support**: Android & iOS.
 - **Returns**: List of asset IDs that were successfully deleted.
 
 ```python
@@ -380,14 +427,24 @@ print(f"Deleted {len(deleted_ids)} items")
 ```
 
 #### `rename_asset(asset_id: str, new_name: str) -> bool`
-Renames an asset's display name, including its extension (**Android only**). On Android 11+, the system may present a user confirmation dialog.
+Renames an asset's display name and filename directly in the device MediaStore.
+- **Backend**: **Custom Native Android Kotlin Implementation** (`FletMediaLibraryPlugin.kt`). Upstream `photo_manager` does **not** support renaming assets.
+- **Platform Support**: **Android Only** (raises `UnsupportedError` on iOS). On Android 11+, the OS may present a native consent dialog for non-owned media.
+- **Parameters**:
+  - `asset_id`: The MediaStore ID of the item.
+  - `new_name`: New filename with extension (e.g. `"vacation_sunset.jpg"`).
 
 ```python
 ok = await media.rename_asset(asset.id, "vacation_sunset.jpg")
 ```
 
 #### `move_asset(asset_id: str, target_relative_path: str) -> bool`
-Moves an asset to another directory by relative path (**Android 10+ only**, e.g., `"Pictures/Archive"`).
+Moves an asset between public folders (e.g., moving from `DCIM/Camera` to `Pictures/Archive` or `Movies/Archive`).
+- **Backend**: **Custom Native Android Kotlin Implementation** (`RELATIVE_PATH` MediaStore update). Upstream `photo_manager` does **not** support folder relocation.
+- **Platform Support**: **Android 10+ Only** (raises `UnsupportedError` on iOS or older Android versions).
+- **Parameters**:
+  - `asset_id`: The MediaStore ID of the item.
+  - `target_relative_path`: Target public relative path (e.g. `"Pictures/Archive"`).
 
 ```python
 ok = await media.move_asset(asset.id, "Pictures/Archive")
@@ -548,19 +605,33 @@ ft.run(main)
 ### Cookbook 2: Capture/Record & Save Directly to Gallery
 
 ```python
-import tempfile
-from pathlib import Path
 import flet as ft
 from flet_media_library import MediaLibrary
 
-async def save_recording(media: MediaLibrary, recorded_temp_file: str):
-    # Save audio file to Android Music/VoiceNotes
-    asset = await media.save_audio(
-        recorded_temp_file,
-        file_name="voice_note.m4a",
-        album="Music/VoiceNotes",
+async def save_captured_media(media: MediaLibrary, photo_file: str, video_file: str, audio_file: str):
+    # 1. Save photo directly to public Pictures/ or DCIM/ (cross-platform via photo_manager)
+    photo_asset = await media.save_image(
+        photo_file,
+        file_name="snapshot_2026.jpg",
+        album="Pictures/MyCameraApp",  # or "DCIM/Camera"
     )
-    print(f"Saved into gallery with ID: {asset.id}")
+    print(f"Photo saved into Pictures: {photo_asset.display_name} (ID: {photo_asset.id})")
+
+    # 2. Save video directly to public Movies/ or DCIM/ (cross-platform via photo_manager)
+    video_asset = await media.save_video(
+        video_file,
+        file_name="clip_2026.mp4",
+        album="Movies/MyCameraApp",    # or "DCIM/Camera"
+    )
+    print(f"Video saved into Movies: {video_asset.display_name} (ID: {video_asset.id})")
+
+    # 3. Save audio directly to public Music/ (Android-only via custom Kotlin engine)
+    audio_asset = await media.save_audio(
+        audio_file,
+        file_name="voice_note.m4a",
+        album="Music/Recordings",      # Saved directly under Music/
+    )
+    print(f"Audio indexed into Music: {audio_asset.display_name} (ID: {audio_asset.id})")
 ```
 
 ### Cookbook 3: Moving and Renaming Assets (Android)
