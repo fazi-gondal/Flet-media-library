@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
 import flet as ft
 
 from services.media import DemoSession
+from services.paths import get_app_temp_dir
 
 try:
     import flet_camera as fc
@@ -126,12 +126,17 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                             rec_status.color = ft.Colors.ERROR
                             page.update()
                             return
-                except Exception:
-                    pass
+                except Exception as perm_ex:
+                    rec_status.value = f"Permission check failed: {perm_ex}"
+                    rec_status.color = ft.Colors.ERROR
+                    page.update()
+                    return
 
-                # Start recording to a temp file
+                # Start recording to a guaranteed-writable temp directory
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                tmp_path = Path(tempfile.gettempdir()) / f"mldemo_rec_{ts}.m4a"
+                target_dir = get_app_temp_dir()
+                target_dir.mkdir(parents=True, exist_ok=True)
+                tmp_path = target_dir / f"mldemo_rec_{ts}.m4a"
                 rec_state["tmp_path"] = str(tmp_path)
                 rec_state["seconds"] = 0
                 rec_timer_text.value = "00:00"
@@ -153,8 +158,8 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     out = await recorder.stop_recording()
                     if out:
                         rec_state["tmp_path"] = out
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as stop_ex:  # noqa: BLE001
+                    rec_status.value = f"Stop recording notice: {stop_ex}"
                 rec_state["recording"] = False
                 rec_btn_ref.current.icon = ft.Icons.MIC_ROUNDED
                 rec_btn_ref.current.icon_color = ft.Colors.PRIMARY
@@ -164,7 +169,14 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 page.update()
 
                 # Save to Music/Recordings via save_audio
-                tmp_path = Path(rec_state.get("tmp_path", ""))
+                raw_path = rec_state.get("tmp_path", "")
+                tmp_path = Path(raw_path) if raw_path else None
+                if not tmp_path or not tmp_path.exists():
+                    rec_status.value = f"Recording file not found at {raw_path}"
+                    rec_status.color = ft.Colors.ERROR
+                    page.update()
+                    return
+
                 fname = rec_filename_field.value.strip() or f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
                 # Refresh filename for next recording
                 rec_filename_field.value = f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
@@ -332,7 +344,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 page.update()
                 return
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = Path(tempfile.gettempdir()) / f"mldemo_{ts}.jpg"
+            path = get_app_temp_dir() / f"mldemo_{ts}.jpg"
             raw = data if isinstance(data, (bytes, bytearray)) else bytes(data)
             path.write_bytes(raw)
             album = album_field.value or None
@@ -380,7 +392,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     page.update()
                     return
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                path = Path(tempfile.gettempdir()) / f"mldemo_{ts}.mp4"
+                path = get_app_temp_dir() / f"mldemo_{ts}.mp4"
                 raw = data if isinstance(data, (bytes, bytearray)) else bytes(data)
                 path.write_bytes(raw)
                 album = album_field.value or None

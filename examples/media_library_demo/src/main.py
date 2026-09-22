@@ -29,7 +29,10 @@ from screens.home import build_home
 from screens.tools import build_tools
 import traceback
 from services.media import DemoSession
+from services.paths import get_app_temp_dir
 
+# Initialize guaranteed writable temp directory for Android/iOS/Desktop
+get_app_temp_dir()
 
 
 def main(page: ft.Page) -> None:
