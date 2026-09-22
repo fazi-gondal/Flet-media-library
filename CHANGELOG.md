@@ -7,11 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Permissions**: query and return per-media-type states (image/video/audio) instead of mirroring one aggregate state across all requested types.
+- **Native concurrency**: Android write-consent flows (rename/move) reject concurrent pending operations instead of overwriting the first `MethodChannel.Result`; pending state is cleared cleanly on activity detach.
+
+### Added
+- `get_thumbnail_path()` — cached local JPEG path for gallery-scale use without Base64 over the Flet boundary.
+- `get_capabilities()` — explicit platform capability flags (`supports_audio_save`, `supports_move`, `supports_rename`, etc.).
+- Optional `min_date_added` / `max_date_added` filters on `get_assets` (global queries).
+- `relative_path` keyword on save APIs (preferred over the legacy `album` alias).
+
+### Changed
+- Android plugin toolchain: AGP 8.7.3, Kotlin 2.0.21, Java 17, compileSdk 35.
+- Permission results always serialize via `toMap()` on the Dart service boundary.
+
 ### Planned
 
 - Broader device matrix verification (Android 10–15, iOS)
 - Dart unit tests with mocked `photo_manager`
-- Optional resolved file-path API for in-app playback of library assets
+- Physical/emulator integration tests for MediaStore, PhotoKit, permissions, delete confirmation
+- Optional resolved original file-path API for in-app playback
 
 ## [1.0.2] - 2026-09-22
 

@@ -51,10 +51,30 @@ class PhotoManagerAdapter {
         PermissionState.notDetermined => MediaPermissionState.unknown,
       };
 
-  Future<MediaPermissionsResult> checkPermissions(
-    List<String> mediaTypes,
-  ) async {
-    final requestType = _requestTypeFromMediaTypes(mediaTypes);
+  /// Expand "all" into the concrete media types so callers always receive
+  /// per-type states when the platform can report them independently.
+  List<String> _expandMediaTypes(List<String> mediaTypes) {
+    if (mediaTypes.contains("all") || mediaTypes.isEmpty) {
+      return const ["image", "video", "audio"];
+    }
+    // Preserve order, drop duplicates.
+    final seen = <String>{};
+    final out = <String>[];
+    for (final t in mediaTypes) {
+      if (t == "image" || t == "video" || t == "audio") {
+        if (seen.add(t)) out.add(t);
+      } else if (t != "all") {
+        throw MediaLibraryException(
+          MediaErrorCodes.invalidArgument,
+          "Unknown media type '$t'. Use 'image', 'video', 'audio' or 'all'.",
+        );
+      }
+    }
+    return out.isEmpty ? const ["image", "video", "audio"] : out;
+  }
+
+  Future<MediaPermissionState> _permissionStateForType(String mediaType) async {
+    final requestType = _requestTypeFromMediaTypes([mediaType]);
     final state = await PhotoManager.getPermissionState(
       requestOption: PermissionRequestOption(
         androidPermission: AndroidPermission(
@@ -63,14 +83,30 @@ class PhotoManagerAdapter {
         ),
       ),
     );
-    return _permissionResult(mediaTypes, state);
+    return _mapPermissionState(state);
+  }
+
+  Future<MediaPermissionsResult> checkPermissions(
+    List<String> mediaTypes,
+  ) async {
+    final types = _expandMediaTypes(mediaTypes);
+    // Query each type independently so Android 13+ granular READ_MEDIA_*
+    // (and any future per-type states) are not collapsed into one aggregate.
+    final states = <String, MediaPermissionState>{};
+    for (final t in types) {
+      states[t] = await _permissionStateForType(t);
+    }
+    return _permissionResultFromStates(states);
   }
 
   Future<MediaPermissionsResult> requestPermissions(
     List<String> mediaTypes,
   ) async {
-    final requestType = _requestTypeFromMediaTypes(mediaTypes);
-    final state = await PhotoManager.requestPermissionExtend(
+    final types = _expandMediaTypes(mediaTypes);
+    // Request the combined type once (single system dialog), then re-check
+    // each type so the returned map reflects actual per-type outcomes.
+    final requestType = _requestTypeFromMediaTypes(types);
+    await PhotoManager.requestPermissionExtend(
       requestOption: PermissionRequestOption(
         androidPermission: AndroidPermission(
           type: requestType,
@@ -78,21 +114,22 @@ class PhotoManagerAdapter {
         ),
       ),
     );
-    return _permissionResult(mediaTypes, state);
+    final states = <String, MediaPermissionState>{};
+    for (final t in types) {
+      states[t] = await _permissionStateForType(t);
+    }
+    return _permissionResultFromStates(states);
   }
 
-  MediaPermissionsResult _permissionResult(
-    List<String> mediaTypes,
-    PermissionState state,
+  MediaPermissionsResult _permissionResultFromStates(
+    Map<String, MediaPermissionState> states,
   ) {
-    // The backend reports one aggregate state; mirror it across requested types.
-    final mapped = _mapPermissionState(state);
-    return MediaPermissionsResult(
-      states: {for (final t in mediaTypes) t: mapped},
-      canRequest:
-          mapped == MediaPermissionState.denied ||
-          mapped == MediaPermissionState.unknown,
+    final canRequest = states.values.any(
+      (s) =>
+          s == MediaPermissionState.denied ||
+          s == MediaPermissionState.unknown,
     );
+    return MediaPermissionsResult(states: states, canRequest: canRequest);
   }
 
   Future<void> openSettings() => PhotoManager.openSetting();
@@ -183,6 +220,8 @@ class PhotoManagerAdapter {
     int offset = 0,
     String sortBy = "date_added",
     String sortOrder = "desc",
+    int? minDateAdded,
+    int? maxDateAdded,
   }) async {
     if (limit < 1 || limit > maxPageLimit) {
       throw MediaLibraryException(
@@ -244,6 +283,8 @@ class PhotoManagerAdapter {
         sortBy: sortBy,
         sortOrder: sortOrder,
         mimeType: mimeType,
+        minDateAdded: minDateAdded,
+        maxDateAdded: maxDateAdded,
       );
       total = await PhotoManager.getAssetCount(
         type: requestType,
@@ -283,6 +324,8 @@ class PhotoManagerAdapter {
     required String sortBy,
     required String sortOrder,
     required String? mimeType,
+    int? minDateAdded,
+    int? maxDateAdded,
   }) {
     final asc = sortOrder == "asc";
     final filter = AdvancedCustomFilter();
@@ -300,6 +343,26 @@ class PhotoManagerAdapter {
           column: CustomColumns.android.mimeType,
           value: mimeType,
           operator: "=",
+        ),
+      );
+    }
+
+    // date_added is unix seconds, matching MediaAsset.date_added.
+    if (minDateAdded != null) {
+      filter.addWhereCondition(
+        ColumnWhereCondition(
+          column: CustomColumns.base.createDate,
+          value: "$minDateAdded",
+          operator: ">=",
+        ),
+      );
+    }
+    if (maxDateAdded != null) {
+      filter.addWhereCondition(
+        ColumnWhereCondition(
+          column: CustomColumns.base.createDate,
+          value: "$maxDateAdded",
+          operator: "<=",
         ),
       );
     }
@@ -416,6 +479,42 @@ class PhotoManagerAdapter {
       format: ThumbnailFormat.jpeg,
       quality: quality.clamp(0, 100),
     );
+  }
+
+  /// Writes a JPEG thumbnail to a stable cache path and returns that path.
+  ///
+  /// Prefer this over [getThumbnail] for large galleries: the path can be
+  /// handed to native image widgets without shipping Base64 through the
+  /// Flet/Python boundary on every scroll.
+  Future<String?> getThumbnailPath(
+    String assetId, {
+    int width = 200,
+    int height = 200,
+    int quality = 90,
+  }) async {
+    await ensureAccess();
+    final entity = await _requireAsset(assetId);
+    final bytes = await entity.thumbnailDataWithSize(
+      ThumbnailSize(width, height),
+      format: ThumbnailFormat.jpeg,
+      quality: quality.clamp(0, 100),
+    );
+    if (bytes == null || bytes.isEmpty) return null;
+
+    final cacheDir = Directory(
+      '${Directory.systemTemp.path}/flet_media_library_thumbs',
+    );
+    if (!await cacheDir.exists()) {
+      await cacheDir.create(recursive: true);
+    }
+    // Include size/quality in the key so different request params do not collide.
+    final file = File(
+      '${cacheDir.path}/${assetId}_${width}x${height}_q$quality.jpg',
+    );
+    if (!await file.exists()) {
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    return file.path;
   }
 
   Future<AssetEntity> _requireAsset(String assetId) async {
@@ -624,7 +723,39 @@ class PhotoManagerAdapter {
     PhotoManager.removeChangeCallback(_handleChange);
   }
 
-  Future<void> clearFileCache() => PhotoManager.clearFileCache();
+  Future<void> clearFileCache() async {
+    await PhotoManager.clearFileCache();
+    // Also clear our thumbnail path cache.
+    final cacheDir = Directory(
+      '${Directory.systemTemp.path}/flet_media_library_thumbs',
+    );
+    if (await cacheDir.exists()) {
+      await cacheDir.delete(recursive: true);
+    }
+  }
+
+  /// Platform capability flags so callers do not hard-code Android/iOS gaps.
+  Future<Map<String, dynamic>> getCapabilities() async {
+    final isAndroid = Platform.isAndroid;
+    final isIOS = Platform.isIOS;
+    final sdk = isAndroid ? await _sdkInt() : 0;
+    return {
+      "platform": isAndroid
+          ? "android"
+          : isIOS
+              ? "ios"
+              : Platform.operatingSystem,
+      "supports_audio_save": isAndroid,
+      "supports_move": isAndroid && sdk >= 29,
+      "supports_rename": isAndroid,
+      "supports_copy": !(isAndroid && sdk >= 30),
+      "supports_mime_filter": true,
+      "supports_limited_access": isIOS || (isAndroid && sdk >= 34),
+      "supports_thumbnail_path": true,
+      "supports_change_notify": isAndroid || isIOS,
+      "android_sdk": sdk,
+    };
+  }
 }
 
 extension on AssetType {

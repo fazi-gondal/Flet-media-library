@@ -4,9 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Allow running from the Actions tab without a push (useful when iterating
+  # on a branch or verifying after a merge without local Flutter/Android Studio).
+  workflow_dispatch:
 
 jobs:
   python:
+    name: Python tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +23,7 @@ jobs:
         run: uv run pytest tests -q
 
   dart:
+    name: Flutter analyze + format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

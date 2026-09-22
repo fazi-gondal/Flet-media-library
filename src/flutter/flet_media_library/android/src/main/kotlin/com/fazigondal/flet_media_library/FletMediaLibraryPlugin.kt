@@ -46,10 +46,30 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
     private var activityBinding: ActivityPluginBinding? = null
     private var channel: MethodChannel? = null
 
-    // Pending operation waiting for system user consent dialog
+    // Pending operation waiting for system user consent dialog.
+    // Only one write-consent flow may be active at a time; a second concurrent
+    // rename/move that needs user consent is rejected until the first settles.
     private var pendingResult: MethodChannel.Result? = null
     private var pendingUri: Uri? = null
     private var pendingValues: ContentValues? = null
+
+    private fun hasPendingWriteConsent(): Boolean = pendingResult != null
+
+    private fun setPendingWriteConsent(
+        result: MethodChannel.Result,
+        uri: Uri,
+        values: ContentValues,
+    ) {
+        pendingResult = result
+        pendingUri = uri
+        pendingValues = values
+    }
+
+    private fun clearPendingWriteConsent() {
+        pendingResult = null
+        pendingUri = null
+        pendingValues = null
+    }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -73,6 +93,8 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
         activityBinding?.removeActivityResultListener(this)
         activity = null
         activityBinding = null
+        // Keep pending state across config changes; activity result will be
+        // re-delivered after reattach. Do not clear pendingResult here.
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
@@ -83,6 +105,11 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
         activityBinding?.removeActivityResultListener(this)
         activity = null
         activityBinding = null
+        // Activity is going away permanently; fail any outstanding consent flow
+        // so the Dart side is not left hanging.
+        val res = pendingResult
+        clearPendingWriteConsent()
+        res?.success(false)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
@@ -90,9 +117,7 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
             val res = pendingResult
             val uri = pendingUri
             val values = pendingValues
-            pendingResult = null
-            pendingUri = null
-            pendingValues = null
+            clearPendingWriteConsent()
 
             if (res == null) return false
 
@@ -206,10 +231,16 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val act = activity
                 if (act != null) {
+                    if (hasPendingWriteConsent()) {
+                        result.error(
+                            "CONCURRENT_OPERATION",
+                            "Another write-consent operation is already pending. Wait for it to finish.",
+                            null,
+                        )
+                        return
+                    }
                     val pendingIntent = MediaStore.createWriteRequest(ctx.contentResolver, listOf(uri))
-                    pendingResult = result
-                    pendingUri = uri
-                    pendingValues = values
+                    setPendingWriteConsent(result, uri, values)
                     act.startIntentSenderForResult(
                         pendingIntent.intentSender,
                         REQUEST_CODE_WRITE_PERMISSION,
@@ -221,9 +252,15 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
                 // Android 10 (API 29) RecoverableSecurityException
                 val act = activity
                 if (act != null) {
-                    pendingResult = result
-                    pendingUri = uri
-                    pendingValues = values
+                    if (hasPendingWriteConsent()) {
+                        result.error(
+                            "CONCURRENT_OPERATION",
+                            "Another write-consent operation is already pending. Wait for it to finish.",
+                            null,
+                        )
+                        return
+                    }
+                    setPendingWriteConsent(result, uri, values)
                     act.startIntentSenderForResult(
                         secEx.userAction.actionIntent.intentSender,
                         REQUEST_CODE_WRITE_PERMISSION,
@@ -273,10 +310,16 @@ class FletMediaLibraryPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, A
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val act = activity
                 if (act != null) {
+                    if (hasPendingWriteConsent()) {
+                        result.error(
+                            "CONCURRENT_OPERATION",
+                            "Another write-consent operation is already pending. Wait for it to finish.",
+                            null,
+                        )
+                        return
+                    }
                     val pendingIntent = MediaStore.createWriteRequest(ctx.contentResolver, listOf(uri))
-                    pendingResult = result
-                    pendingUri = uri
-                    pendingValues = values
+                    setPendingWriteConsent(result, uri, values)
                     act.startIntentSenderForResult(
                         pendingIntent.intentSender,
                         REQUEST_CODE_WRITE_PERMISSION,
