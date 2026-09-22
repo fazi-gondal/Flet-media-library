@@ -140,6 +140,9 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 rec_state["tmp_path"] = str(tmp_path)
                 rec_state["seconds"] = 0
                 rec_timer_text.value = "00:00"
+                rec_status.value = f"Starting… ({tmp_path})"
+                rec_status.color = ft.Colors.ON_SURFACE_VARIANT
+                page.update()
                 try:
                     await recorder.start_recording(output_path=str(tmp_path))
                     rec_state["recording"] = True
@@ -150,32 +153,43 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     level_bar.value = None  # pulse progress bar
                     rec_state["timer_task"] = page.run_task(_tick_timer)
                 except Exception as ex:  # noqa: BLE001
-                    rec_status.value = f"Could not start recording: {ex}"
+                    rec_status.value = f"Could not start recording: {ex}\nPath: {tmp_path}"
                     rec_status.color = ft.Colors.ERROR
+                    rec_state["tmp_path"] = ""  # invalidate so stop path is not stale
             else:
                 # Stop recording
+                stop_error: str | None = None
                 try:
                     out = await recorder.stop_recording()
                     if out:
                         rec_state["tmp_path"] = out
                 except Exception as stop_ex:  # noqa: BLE001
-                    rec_status.value = f"Stop recording notice: {stop_ex}"
+                    stop_error = str(stop_ex)
                 rec_state["recording"] = False
                 rec_btn_ref.current.icon = ft.Icons.MIC_ROUNDED
                 rec_btn_ref.current.icon_color = ft.Colors.PRIMARY
-                rec_status.value = "Saving to Music…"
-                rec_status.color = None
                 level_bar.value = 0
-                page.update()
 
                 # Save to Music/Recordings via save_audio
                 raw_path = rec_state.get("tmp_path", "")
                 tmp_path = Path(raw_path) if raw_path else None
-                if not tmp_path or not tmp_path.exists():
-                    rec_status.value = f"Recording file not found at {raw_path}"
+                if not tmp_path or not raw_path:
+                    msg = f"No recording path available{': ' + stop_error if stop_error else ''}"
+                    rec_status.value = msg
                     rec_status.color = ft.Colors.ERROR
                     page.update()
                     return
+                if not tmp_path.exists():
+                    rec_status.value = (
+                        f"Recording file not found: {tmp_path}"
+                        + (f"\nStop error: {stop_error}" if stop_error else "")
+                    )
+                    rec_status.color = ft.Colors.ERROR
+                    page.update()
+                    return
+                rec_status.value = "Saving to Music…"
+                rec_status.color = None
+                page.update()
 
                 fname = rec_filename_field.value.strip() or f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
                 # Refresh filename for next recording
