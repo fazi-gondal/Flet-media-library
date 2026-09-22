@@ -20,12 +20,15 @@ class MediaLibraryService extends FletService {
         : <String, dynamic>{};
     return switch (methodName) {
       // permissions
-      "check_permissions" => _guard(
-        () => _adapter.checkPermissions(_mediaTypes(arguments)),
-      ),
-      "request_permissions" => _guard(
-        () => _adapter.requestPermissions(_mediaTypes(arguments)),
-      ),
+      "check_permissions" => _guard(() async {
+        final result = await _adapter.checkPermissions(_mediaTypes(arguments));
+        return result.toMap();
+      }),
+      "request_permissions" => _guard(() async {
+        final result =
+            await _adapter.requestPermissions(_mediaTypes(arguments));
+        return result.toMap();
+      }),
       "open_settings" => _guard(() => _adapter.openSettings()),
       "present_limited" => _guard(
         () => _adapter.presentLimited(_mediaTypes(arguments)),
@@ -48,6 +51,8 @@ class MediaLibraryService extends FletService {
           offset: (arguments["offset"] as num?)?.toInt() ?? 0,
           sortBy: arguments["sort_by"] as String? ?? "date_added",
           sortOrder: arguments["sort_order"] as String? ?? "desc",
+          minDateAdded: (arguments["min_date_added"] as num?)?.toInt(),
+          maxDateAdded: (arguments["max_date_added"] as num?)?.toInt(),
         ),
       ),
       "get_asset" => _guard(() async {
@@ -64,6 +69,15 @@ class MediaLibraryService extends FletService {
           quality: (arguments["quality"] as num?)?.toInt() ?? 90,
         );
         return {"data": bytes};
+      }),
+      "get_thumbnail_path" => _guard(() async {
+        final path = await _adapter.getThumbnailPath(
+          arguments["asset_id"] as String? ?? "",
+          width: (arguments["width"] as num?)?.toInt() ?? 200,
+          height: (arguments["height"] as num?)?.toInt() ?? 200,
+          quality: (arguments["quality"] as num?)?.toInt() ?? 90,
+        );
+        return {"path": path ?? ""};
       }),
       // saving
       "save_image" => _validateAndSave(
@@ -141,6 +155,7 @@ class MediaLibraryService extends FletService {
         return null;
       }),
       "clear_file_cache" => _guard(() => _adapter.clearFileCache()),
+      "get_capabilities" => _guard(() => _adapter.getCapabilities()),
       _ => throw MediaLibraryException(
         MediaErrorCodes.invalidArgument,
         "MediaLibraryService: unknown method '$methodName'.",

@@ -34,7 +34,15 @@ class MediaAsset:
 
 @dataclass
 class MediaAlbum:
-    """A photo-library album (bucket/folder)."""
+    """A photo-library album (bucket/folder).
+
+    Notes on cross-platform semantics:
+    - ``id`` is the platform album/path id (use with :meth:`get_assets`).
+    - ``is_system_album`` is approximated as ``is_all`` because photo_manager
+      does not expose a dedicated system-album flag.
+    - Individual :class:`MediaAsset` objects may not carry a reliable
+      ``album_id``; ``album_name`` is often inferred from ``relative_path``.
+    """
 
     id: str = ""
     name: str = ""

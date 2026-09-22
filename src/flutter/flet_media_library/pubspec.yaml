@@ -1,6 +1,6 @@
 name: flet_media_library
 description: Flet extension for cross-platform media library access powered by photo_manager.
-version: 1.0.2
+version: 1.1.2
 publish_to: none
 
 environment:

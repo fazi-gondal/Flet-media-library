@@ -24,7 +24,7 @@ _COMMON_PATHS = [
     "DCIM/Camera",
     "Movies",
     "Music",
-    "Music/Recordings",
+    "Music/FletMediaLibrary",
     "Downloads",
 ]
 

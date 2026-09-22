@@ -11,7 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Broader device matrix verification (Android 10–15, iOS)
 - Dart unit tests with mocked `photo_manager`
-- Optional resolved file-path API for in-app playback of library assets
+- Physical/emulator integration tests for MediaStore, PhotoKit, permissions, delete confirmation
+- Optional resolved original file-path API for in-app playback
+
+## [1.1.2] - 2026-09-22
+
+### Fixed
+- **Demo audio recording**: register the PCM stream handler before recording starts and report chunk/byte diagnostics, ensuring captured audio is written to a non-empty WAV before `save_audio()`.
+
+## [1.1.1] - 2026-09-22
+
+### Fixed
+- **Demo audio recording**: Capture screen now uses `flet-audio-recorder` PCM streaming and writes a WAV file before `save_audio()`, avoiding Android `MediaMuxer` file-output crashes at recording start.
+
+## [1.1.0] - 2026-09-22
+
+### Fixed
+- **Permissions**: query and return per-media-type states (image/video/audio) instead of mirroring one aggregate state across all requested types.
+- **Native concurrency**: Android write-consent flows (rename/move) reject concurrent pending operations instead of overwriting the first `MethodChannel.Result`; pending state is cleared cleanly on activity detach.
+- **Demo recording path**: absolute writable temp only via `recording_output_path()` / `get_app_temp_dir()`; never `Path.resolve()` on `FLET_APP_STORAGE_*` (fixes MediaMuxer doubled-path `ENOENT`). Demo-only — not a library package bug.
+
+### Added
+- `get_thumbnail_path()` — cached local JPEG path for gallery-scale use without Base64 over the Flet boundary.
+- `get_capabilities()` — explicit platform capability flags (`supports_audio_save`, `supports_move`, `supports_rename`, `supports_limited_access`, etc.).
+- Optional `min_date_added` / `max_date_added` filters on `get_assets` (global queries).
+- `relative_path` keyword on save APIs (preferred over the legacy `album` alias).
+
+### Changed
+- Android plugin toolchain: AGP 8.7.3, Kotlin 2.0.21, Java 17, compileSdk 35.
+- Permission results always serialize via `toMap()` on the Dart service boundary.
+- Documentation: root README, demo README, and API reference updated for 1.1.0 APIs.
 
 ## [1.0.2] - 2026-09-22
 
@@ -35,7 +64,7 @@ First stable production release.
 ### Added
 - Full compatibility with Flet 1.0.0 and Python 3.14.
 - In-app video and audio playback support via `flet-video` integration.
-- Microphone audio recording with `flet-audio-recorder` and saving directly to `Music/Recordings`.
+- Microphone audio recording with `flet-audio-recorder` and saving directly to `Music/FletMediaLibrary`.
 - Streamlined asset move & rename workflows for Android scoped storage.
 - Comprehensive end-to-end demo and integration test suite.
 

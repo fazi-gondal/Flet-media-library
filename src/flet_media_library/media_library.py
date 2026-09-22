@@ -126,6 +126,8 @@ class MediaLibrary(ft.Service):
         offset: int = 0,
         sort_by: str = "date_added",
         sort_order: str = "desc",
+        min_date_added: int | None = None,
+        max_date_added: int | None = None,
     ) -> MediaAssetPage:
         """Query assets with pagination.
 
@@ -141,12 +143,17 @@ class MediaLibrary(ft.Service):
         limit:
             Page size between 1 and 500.
         offset:
-            Number of items to skip.
+            Number of items to skip. Offset pagination can produce duplicates
+            or gaps if the library changes between pages; re-query from offset
+            0 after a change-notification event when consistency matters.
         sort_by:
             ``date_added`` (default), ``date_modified``, ``display_name``,
             ``size`` or ``duration``. The last three require album=None.
         sort_order:
             ``desc`` (default) or ``asc``.
+        min_date_added / max_date_added:
+            Optional inclusive unix-second bounds on ``date_added``. Only
+            applied for global (no-album) queries.
         """
         self._validate_media_type(media_type)
         if sort_by not in VALID_SORT_FIELDS:
@@ -167,6 +174,8 @@ class MediaLibrary(ft.Service):
                 "offset": offset,
                 "sort_by": sort_by,
                 "sort_order": sort_order,
+                "min_date_added": min_date_added,
+                "max_date_added": max_date_added,
             },
         )
         return parse_asset_page(result)
@@ -190,6 +199,9 @@ class MediaLibrary(ft.Service):
         """Return a base64-encoded JPEG thumbnail usable in ``ft.Image(src=…)``.
 
         Works for images **and** video frames on both platforms.
+
+        For large galleries prefer :meth:`get_thumbnail_path`, which avoids
+        shipping Base64 through the Python/Dart boundary on every request.
         """
         if not asset_id:
             raise InvalidArgumentError("asset_id must not be empty")
@@ -210,40 +222,118 @@ class MediaLibrary(ft.Service):
             return data
         return ""
 
+    async def get_thumbnail_path(
+        self,
+        asset_id: str,
+        width: int = 200,
+        height: int = 200,
+        quality: int = 90,
+    ) -> str:
+        """Return a local filesystem path to a cached JPEG thumbnail.
+
+        Prefer this over :meth:`get_thumbnail` when rendering many items
+        (e.g. a gallery grid). The file is written under a temp cache
+        directory and reused for the same ``asset_id``/size/quality key.
+
+        The path is suitable for ``ft.Image(src=path)`` on mobile.
+        """
+        if not asset_id:
+            raise InvalidArgumentError("asset_id must not be empty")
+        result = await self._invoke(
+            "get_thumbnail_path",
+            {
+                "asset_id": asset_id,
+                "width": width,
+                "height": height,
+                "quality": quality,
+            },
+            timeout=30.0,
+        )
+        return str(result.get("path") or "")
+
     # ───────────────────────────────── saving ──────────────────────────────────
 
     async def save_image(
         self,
         file_path: str,
         file_name: str | None = None,
+        *,
+        relative_path: str | None = None,
         album: str | None = None,
     ) -> MediaAsset:
-        """Copy an image file into the device gallery."""
-        return parse_media_asset(await self._save("save_image", file_path, file_name, album))
+        """Copy an image file into the device gallery.
+
+        ``relative_path`` is the preferred name for the destination folder
+        (e.g. ``"Pictures/MyApp"``). ``album`` is kept as a backward-compatible
+        alias for the same value.
+        """
+        return parse_media_asset(
+            await self._save(
+                "save_image",
+                file_path,
+                file_name,
+                relative_path=relative_path,
+                album=album,
+            )
+        )
 
     async def save_video(
         self,
         file_path: str,
         file_name: str | None = None,
+        *,
+        relative_path: str | None = None,
         album: str | None = None,
     ) -> MediaAsset:
-        """Copy a video file into the device gallery."""
-        return parse_media_asset(await self._save("save_video", file_path, file_name, album))
+        """Copy a video file into the device gallery.
+
+        See :meth:`save_image` for ``relative_path`` vs ``album``.
+        """
+        return parse_media_asset(
+            await self._save(
+                "save_video",
+                file_path,
+                file_name,
+                relative_path=relative_path,
+                album=album,
+            )
+        )
 
     async def save_audio(
         self,
         file_path: str,
         file_name: str | None = None,
+        *,
+        relative_path: str | None = None,
         album: str | None = None,
     ) -> MediaAsset:
-        """Copy an audio file into the device gallery (Android only)."""
-        return parse_media_asset(await self._save("save_audio", file_path, file_name, album))
+        """Copy an audio file into the device gallery (Android only).
+
+        See :meth:`save_image` for ``relative_path`` vs ``album``.
+        """
+        return parse_media_asset(
+            await self._save(
+                "save_audio",
+                file_path,
+                file_name,
+                relative_path=relative_path,
+                album=album,
+            )
+        )
 
     async def _save(
-        self, method: str, file_path: str, file_name: str | None, album: str | None
+        self,
+        method: str,
+        file_path: str,
+        file_name: str | None,
+        *,
+        relative_path: str | None = None,
+        album: str | None = None,
     ) -> dict[str, Any]:
         if not file_path or not str(file_path).strip():
             raise InvalidArgumentError("file_path must not be empty")
+        # Prefer explicit relative_path; fall back to legacy album alias.
+        dest = relative_path if relative_path is not None else album
         # Validate local existence only when the path is reachable from this
         # process. On packaged mobile builds the file lives on the device, so
         # a host-side exists() check would be wrong — skip it then.
@@ -259,8 +349,9 @@ class MediaLibrary(ft.Service):
         args: dict[str, Any] = {"file_path": file_path}
         if file_name is not None:
             args["filename"] = file_name
-        if album is not None:
-            args["album"] = album
+        if dest is not None:
+            # Dart service still reads "album" as the relative path argument.
+            args["album"] = dest
         return await self._invoke(method, args, timeout=120.0)
 
     # ──────────────────────────── delete / copy / move ─────────────────────────
@@ -341,6 +432,24 @@ class MediaLibrary(ft.Service):
     async def clear_file_cache(self) -> None:
         """Clear thumbnail/file caches created by the underlying plugin."""
         await self._invoke("clear_file_cache")
+
+    async def get_capabilities(self) -> dict[str, Any]:
+        """Return platform capability flags.
+
+        Keys include (boolean unless noted):
+
+        - ``platform`` (str): ``android`` / ``ios`` / other
+        - ``supports_audio_save``
+        - ``supports_move``
+        - ``supports_rename``
+        - ``supports_copy``
+        - ``supports_mime_filter``
+        - ``supports_limited_access``
+        - ``supports_thumbnail_path``
+        - ``supports_change_notify``
+        - ``android_sdk`` (int, 0 when not Android)
+        """
+        return await self._invoke("get_capabilities")
 
     # ───────────────────────────────── internals ────────────────────────────────
 
