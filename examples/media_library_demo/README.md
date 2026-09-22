@@ -85,7 +85,7 @@ Demonstrates taking new media and saving it directly into the device library usi
   - Encodes cleanly with `AudioEncoder.AACLC` (`.m4a`).
   - Pulsing recording activity indicator.
   - Writes scratch `.m4a` files only to an **absolute writable** app temp/cache directory
-    (`services.paths.recording_output_path` / `get_app_temp_dir`). Relative
+    (`services.paths.get_app_temp_dir`). Relative
     `FLET_APP_STORAGE_*` values that would resolve under the Flet **assets** tree are
     rejected (avoids MediaMuxer `ENOENT` crashes).
   - Automatically saves finished recordings into Android's shared system `Music/Recordings`

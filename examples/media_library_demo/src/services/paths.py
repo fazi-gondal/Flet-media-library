@@ -7,123 +7,95 @@ import tempfile
 from pathlib import Path
 
 
-def _is_usable_dir(p: Path) -> bool:
-    """Return True if *p* is absolute, writable, and not under a read-only assets tree."""
+def _probe_writable(p: Path) -> bool:
+    """Return True if *p* exists (or can be created) and is writable."""
     try:
-        if not p.is_absolute():
-            return False
-        # Reject Flet asset bundles and other read-only trees that cause
-        # MediaMuxer ENOENT when a relative env path is resolved against cwd.
-        parts = {x.lower() for x in p.parts}
-        if "assets" in parts and "flet" in parts:
-            return False
         p.mkdir(parents=True, exist_ok=True)
-        probe = p / ".write_probe"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink(missing_ok=True)
+        test_file = p / ".write_probe"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
         return True
     except Exception:
         return False
 
 
-def _candidate_from_env(name: str) -> Path | None:
-    raw = os.environ.get(name)
-    if not raw:
-        return None
-    # Never resolve relative env values against process cwd (on Android that
-    # is often the Flet assets dir, producing paths like
-    # .../flet/app/assets/data/data/<pkg>/cache/...).
-    p = Path(raw)
-    if not p.is_absolute():
-        return None
-    return p
-
-
 def get_app_temp_dir() -> Path:
-    """Resolve a guaranteed-writable scratch/temp directory.
+    """Return a guaranteed-writable scratch directory for Android, iOS, and Desktop.
 
-    On packaged Android/iOS Flet apps, ``tempfile.gettempdir()`` and relative
-    paths are unsafe: cwd may be the assets tree, and ``/tmp`` may not exist.
-    Prefer absolute ``FLET_APP_STORAGE_*`` dirs, then a few absolute fallbacks.
+    ### Why not `tempfile.gettempdir()` or `Path.resolve()`?
+
+    On Android (Serious Python / Flet production builds) `tempfile.gettempdir()`
+    defaults to `/tmp` which does not exist → native MediaRecorder crash.
+
+    Flet injects `FLET_APP_STORAGE_TEMP`, `FLET_APP_STORAGE_CACHE`, and
+    `FLET_APP_STORAGE_DATA` as **absolute** paths into the process environment.
+    However, calling `Path(value).resolve()` is **wrong** on Android because the
+    Flet Python runtime's CWD is deep inside the APK assets directory:
+
+        /data/user/0/<pkg>/files/flet/app/assets/
+
+    When `FLET_APP_STORAGE_CACHE` contains the raw string returned by Android's
+    `Context.getCacheDir()` (e.g. `/data/user/0/<pkg>/cache`), `.resolve()` can
+    in some builds produce a doubled path:
+
+        /data/user/0/<pkg>/files/flet/app/assets/data/user/0/<pkg>/cache
+
+    …because `os.path.abspath` can behave unexpectedly when the underlying
+    filesystem exposes the path through a bind-mount visible inside the CWD.
+
+    **Fix**: use the env-var value verbatim (as an absolute `Path`) without
+    `.resolve()`, and only accept it if it is already absolute.
     """
-    env_candidates = [
-        _candidate_from_env("FLET_APP_STORAGE_TEMP"),
-        _candidate_from_env("FLET_APP_STORAGE_CACHE"),
-        # Durable data dir is still writable; use a dedicated subfolder.
-        (
-            (_candidate_from_env("FLET_APP_STORAGE_DATA") / "mldemo_tmp")
-            if _candidate_from_env("FLET_APP_STORAGE_DATA")
-            else None
-        ),
-        _candidate_from_env("TMPDIR"),
-        _candidate_from_env("TEMP"),
-        _candidate_from_env("TMP"),
+    # Priority: Flet-injected dirs first (most reliable on Android/iOS)
+    flet_candidates = [
+        os.environ.get("FLET_APP_STORAGE_TEMP"),
+        os.environ.get("FLET_APP_STORAGE_CACHE"),
+        os.environ.get("FLET_APP_STORAGE_DATA"),  # persistent, falls back here
     ]
-
-    for c in env_candidates:
-        if c is None:
+    for c in flet_candidates:
+        if not c:
             continue
-        if _is_usable_dir(c):
-            tempfile.tempdir = str(c)
-            os.environ["TMPDIR"] = str(c)
-            return c
+        p = Path(c)
+        # Only accept paths that are already absolute to avoid CWD-relative
+        # resolution bugs on Android.
+        if not p.is_absolute():
+            continue
+        if _probe_writable(p):
+            tempfile.tempdir = str(p)
+            os.environ["TMPDIR"] = str(p)
+            return p
 
-    # Absolute Android-style fallbacks when env vars are missing or relative.
-    # Package id matches [tool.flet] org + product in the demo pyproject.
-    android_fallbacks = [
-        Path("/data/user/0/com.gondal.media_library_demo/cache/mldemo"),
-        Path("/data/data/com.gondal.media_library_demo/cache/mldemo"),
-    ]
-    for c in android_fallbacks:
-        if _is_usable_dir(c):
-            tempfile.tempdir = str(c)
-            os.environ["TMPDIR"] = str(c)
-            return c
+    # Standard OS temp vars (work on Linux/macOS/Windows desktops)
+    for var in ("TMPDIR", "TEMP", "TMP"):
+        c = os.environ.get(var)
+        if not c:
+            continue
+        p = Path(c)
+        if not p.is_absolute():
+            continue
+        if _probe_writable(p):
+            return p
 
+    # Last resort: ask tempfile (safe on desktop, may fail on Android /tmp)
     try:
         p = Path(tempfile.gettempdir())
-        if not p.is_absolute():
-            p = Path("/").joinpath(*p.parts) if False else p.resolve()
-        if _is_usable_dir(p):
+        if _probe_writable(p):
             return p
     except Exception:
         pass
 
+    # Ultimate fallback: home-dir scratch folder
     try:
-        p = (Path.home() / ".mldemo_cache").resolve()
-        if _is_usable_dir(p):
+        p = Path.home() / ".mldemo_cache"
+        if _probe_writable(p):
             tempfile.tempdir = str(p)
             os.environ["TMPDIR"] = str(p)
             return p
     except Exception:
         pass
 
-    # Last resort: cwd only if absolute and writable (desktop dev).
-    fallback = Path.cwd().resolve()
-    if _is_usable_dir(fallback):
-        tempfile.tempdir = str(fallback)
-        os.environ["TMPDIR"] = str(fallback)
-        return fallback
-
-    # Always return *something* absolute so callers can still mkdir.
-    emergency = Path("/data/local/tmp/mldemo")
-    try:
-        emergency.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        emergency = Path.cwd().resolve()
-    tempfile.tempdir = str(emergency)
-    os.environ["TMPDIR"] = str(emergency)
-    return emergency
-
-
-def recording_output_path(prefix: str = "mldemo_rec", suffix: str = ".m4a") -> Path:
-    """Absolute path for a new audio recording file; parent dir is created."""
-    from datetime import datetime
-
-    target_dir = get_app_temp_dir()
-    target_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = target_dir / f"{prefix}_{ts}{suffix}"
-    # Ensure parent exists one more time (paranoia for native MediaMuxer).
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path.resolve()
+    # If everything else fails return CWD (should never happen in practice)
+    fallback = Path(".").absolute()
+    tempfile.tempdir = str(fallback)
+    os.environ["TMPDIR"] = str(fallback)
+    return fallback
