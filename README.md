@@ -196,7 +196,7 @@ Pre-compiled, ready-to-sideload Android APKs (`.apk`) are automatically compiled
 ### Features in the Demo App:
 - **Media Gallery**: High-performance grid with thumbnails for photos and videos.
 - **In-App Media Player**: Built-in video and audio playback dialogs (`flet-video` / ExoPlayer).
-- **Camera & Microphone Capture**: Live camera preview (`flet-camera`) and audio recorder (`flet-audio-recorder`) saving directly to gallery and `Music/Recordings`.
+- **Camera & Microphone Capture**: Live camera preview (`flet-camera`) and audio recorder (`flet-audio-recorder`) saving directly to gallery and `Music/FletMediaLibrary`.
 - **File Management**: Move files between folders, rename with extensions, and batch-delete items.
 - **Automated Smoke Test**: 1-click test verifying all 8 core package APIs on actual hardware.
 
@@ -675,7 +675,6 @@ async def save_captured_media(media: MediaLibrary, photo_file: str, video_file: 
     audio_asset = await media.save_audio(
         audio_file,
         file_name="voice_note.m4a",
-        album="Music/Recordings",      # Saved directly under Music/
     )
     print(f"Audio indexed into Music: {audio_asset.display_name} (ID: {audio_asset.id})")
 ```

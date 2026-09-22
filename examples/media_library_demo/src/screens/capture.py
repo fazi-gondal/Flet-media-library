@@ -9,7 +9,7 @@ from pathlib import Path
 import flet as ft
 
 from services.media import DemoSession
-from services.paths import get_app_temp_dir
+from services.paths import get_app_temp_dir_for_page
 
 try:
     import flet_camera as fc
@@ -30,6 +30,9 @@ except ImportError:
 
 def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
     media = session.media
+    storage_paths = next((s for s in page.services if isinstance(s, ft.StoragePaths)), None)
+    if storage_paths is None:
+        page.services.append(ft.StoragePaths())
 
     # ────────────────────────────────────────────────────────────────────────
     # Shared status + album field
@@ -136,9 +139,9 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 # Never pass a relative path: on Android Flet cwd can be the
                 # assets tree, which produces nested .../assets/data/data/...
                 # paths and MediaMuxer ENOENT crashes.
-                from services.paths import recording_output_path
+                from services.paths import recording_output_path_for_page
 
-                tmp_path = recording_output_path()
+                tmp_path = await recording_output_path_for_page(page)
                 if not tmp_path.is_absolute():
                     rec_status.value = f"Refusing non-absolute record path: {tmp_path}"
                     rec_status.color = ft.Colors.ERROR
@@ -175,7 +178,9 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 rec_btn_ref.current.icon_color = ft.Colors.PRIMARY
                 level_bar.value = 0
 
-                # Save to Music/Recordings via save_audio
+                # Save via the same proven default path as the Tools importer:
+                # no album/relative_path means the native fallback writes to
+                # Music/FletMediaLibrary.
                 raw_path = rec_state.get("tmp_path", "")
                 tmp_path = Path(raw_path) if raw_path else None
                 if not tmp_path or not raw_path:
@@ -200,17 +205,13 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 # Refresh filename for next recording
                 rec_filename_field.value = f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.m4a"
                 try:
-                    asset = await media.save_audio(
-                        str(tmp_path),
-                        file_name=fname,
-                        album="Music/Recordings",
-                    )
+                    asset = await media.save_audio(str(tmp_path), file_name=fname)
                     session.track_owned(asset.id)
                     tmp_path.unlink(missing_ok=True)
                     rec_status.value = f"Saved to Music: {asset.display_name}"
                     rec_status.color = ft.Colors.GREEN
                     page.show_dialog(
-                        ft.SnackBar(content=ft.Text(f"Recording saved to Music/Recordings: {asset.display_name}"))
+                        ft.SnackBar(content=ft.Text(f"Recording saved to Music/FletMediaLibrary: {asset.display_name}"))
                     )
                 except Exception as ex:  # noqa: BLE001
                     rec_status.value = f"Save failed: {ex}"
@@ -231,7 +232,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                             controls=[
                                 ft.Icon(ft.Icons.MIC_ROUNDED, color=ft.Colors.PRIMARY, size=20),
                                 ft.Text("Audio Recorder", size=15, weight=ft.FontWeight.BOLD),
-                                ft.Text("(saves to Music/Recordings)", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ft.Text("(saves to Music/FletMediaLibrary)", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
                             ],
                         ),
                         rec_filename_field,
@@ -364,7 +365,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 page.update()
                 return
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = get_app_temp_dir() / f"mldemo_{ts}.jpg"
+            path = (await get_app_temp_dir_for_page(page)) / f"mldemo_{ts}.jpg"
             raw = data if isinstance(data, (bytes, bytearray)) else bytes(data)
             path.write_bytes(raw)
             album = album_field.value or None
@@ -413,7 +414,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     page.update()
                     return
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                path = get_app_temp_dir() / f"mldemo_{ts}.mp4"
+                path = (await get_app_temp_dir_for_page(page)) / f"mldemo_{ts}.mp4"
                 raw = data if isinstance(data, (bytes, bytearray)) else bytes(data)
                 path.write_bytes(raw)
                 album = album_field.value or None

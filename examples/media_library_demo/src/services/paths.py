@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 def _is_usable_dir(p: Path) -> bool:
@@ -131,6 +132,45 @@ def get_app_temp_dir() -> Path:
     return emergency
 
 
+def _page_storage_paths(page: Any) -> Any | None:
+    try:
+        import flet as ft
+
+        storage_paths = next(
+            (s for s in getattr(page, "services", []) if isinstance(s, ft.StoragePaths)),
+            None,
+        )
+        if storage_paths is None:
+            storage_paths = ft.StoragePaths()
+            page.services.append(storage_paths)
+        return storage_paths
+    except Exception:
+        return None
+
+
+async def get_app_temp_dir_for_page(page: Any) -> Path:
+    """Return a writable temp/cache dir, preferring Flet's native storage service."""
+    storage_paths = _page_storage_paths(page)
+    if storage_paths is not None:
+        for getter_name in (
+            "get_temporary_directory",
+            "get_application_cache_directory",
+        ):
+            try:
+                raw = await getattr(storage_paths, getter_name)()
+            except Exception:
+                continue
+            if not raw:
+                continue
+            candidate = Path(raw) / "mldemo"
+            if _is_usable_dir(candidate):
+                tempfile.tempdir = str(candidate)
+                os.environ["TMPDIR"] = str(candidate)
+                return candidate
+
+    return get_app_temp_dir()
+
+
 def recording_output_path(prefix: str = "mldemo_rec", suffix: str = ".m4a") -> Path:
     """Absolute path for a new audio recording file; parent dir is created.
 
@@ -145,5 +185,23 @@ def recording_output_path(prefix: str = "mldemo_rec", suffix: str = ".m4a") -> P
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.is_absolute():
         # Should never happen if get_app_temp_dir is correct; refuse relative.
+        raise ValueError(f"recording path must be absolute, got: {path}")
+    return path
+
+
+async def recording_output_path_for_page(
+    page: Any,
+    prefix: str = "mldemo_rec",
+    suffix: str = ".m4a",
+) -> Path:
+    """Absolute output path for AudioRecorder, using native Flet storage first."""
+    from datetime import datetime
+
+    target_dir = await get_app_temp_dir_for_page(page)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = target_dir / f"{prefix}_{ts}{suffix}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.is_absolute():
         raise ValueError(f"recording path must be absolute, got: {path}")
     return path
