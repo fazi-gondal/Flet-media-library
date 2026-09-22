@@ -62,7 +62,27 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
     # ────────────────────────────────────────────────────────────────────────
     rec_status = ft.Text("Tap ● to start recording", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
     rec_timer_text = ft.Text("00:00", size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY)
-    rec_state = {"recording": False, "seconds": 0, "timer_task": None}
+    rec_state = {
+        "recording": False,
+        "accepting_stream": False,
+        "seconds": 0,
+        "timer_task": None,
+        "pcm_buffer": bytearray(),
+        "chunks": 0,
+        "bytes_streamed": 0,
+        "last_sequence": -1,
+    }
+
+    def handle_stream(e) -> None:
+        if not rec_state.get("accepting_stream"):
+            return
+        chunk = e.chunk or b""
+        if not chunk:
+            return
+        rec_state["pcm_buffer"].extend(chunk)
+        rec_state["chunks"] += 1
+        rec_state["bytes_streamed"] = getattr(e, "bytes_streamed", len(rec_state["pcm_buffer"]))
+        rec_state["last_sequence"] = getattr(e, "sequence", rec_state["chunks"] - 1)
     rec_filename_field = ft.TextField(
         label="Recording filename",
         value=f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav",
@@ -113,7 +133,14 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 suppress_noise=True,
             )
             recorder = far.AudioRecorder(configuration=config)
+            recorder.on_stream = handle_stream
             page.services.append(recorder)
+        else:
+            recorder.on_stream = handle_stream
+            try:
+                recorder.update()
+            except Exception:
+                pass
 
         rec_btn_ref = ft.Ref[ft.IconButton]()
         level_bar = ft.ProgressBar(value=0, width=200, color=ft.Colors.PRIMARY, bgcolor=ft.Colors.OUTLINE_VARIANT)
@@ -165,13 +192,11 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     page.update()
                     return
 
-                pcm_buffer = bytearray()
-
-                def on_stream(e: far.AudioRecorderStreamEvent) -> None:
-                    pcm_buffer.extend(e.chunk)
-
-                recorder.on_stream = on_stream
-                rec_state["pcm_buffer"] = pcm_buffer
+                rec_state["pcm_buffer"] = bytearray()
+                rec_state["chunks"] = 0
+                rec_state["bytes_streamed"] = 0
+                rec_state["last_sequence"] = -1
+                rec_state["accepting_stream"] = True
                 rec_state["tmp_path"] = ""
                 rec_state["seconds"] = 0
                 rec_timer_text.value = "00:00"
@@ -187,7 +212,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                         rec_status.value = "Could not start recording"
                         rec_status.color = ft.Colors.ERROR
                         rec_state["pcm_buffer"] = bytearray()
-                        recorder.on_stream = None
+                        rec_state["accepting_stream"] = False
                         page.update()
                         return
                     rec_state["recording"] = True
@@ -201,7 +226,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                     rec_status.value = f"Could not start recording: {ex}"
                     rec_status.color = ft.Colors.ERROR
                     rec_state["pcm_buffer"] = bytearray()
-                    recorder.on_stream = None
+                    rec_state["accepting_stream"] = False
             else:
                 # Stop recording
                 stop_error: str | None = None
@@ -210,7 +235,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 except Exception as stop_ex:  # noqa: BLE001
                     stop_error = str(stop_ex)
                 finally:
-                    recorder.on_stream = None
+                    rec_state["accepting_stream"] = False
                 rec_state["recording"] = False
                 rec_btn_ref.current.icon = ft.Icons.MIC_ROUNDED
                 rec_btn_ref.current.icon_color = ft.Colors.PRIMARY
@@ -221,9 +246,16 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 # Music/FletMediaLibrary.
                 pcm_buffer = rec_state.get("pcm_buffer", bytearray())
                 pcm_bytes = bytes(pcm_buffer)
+                chunks = int(rec_state.get("chunks") or 0)
+                bytes_streamed = int(rec_state.get("bytes_streamed") or len(pcm_bytes))
+                last_sequence = int(rec_state.get("last_sequence") or -1)
                 rec_state["pcm_buffer"] = bytearray()
                 if not pcm_bytes:
-                    msg = f"No audio data captured{': ' + stop_error if stop_error else ''}"
+                    msg = (
+                        "No audio data captured "
+                        f"(chunks={chunks}, bytes={bytes_streamed}, last_seq={last_sequence})"
+                        + (f": {stop_error}" if stop_error else "")
+                    )
                     rec_status.value = msg
                     rec_status.color = ft.Colors.ERROR
                     page.update()
@@ -238,10 +270,18 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 tmp_path: Path | None = None
                 try:
                     tmp_path = await _write_wav_file(pcm_bytes, fname)
+                    wav_size = tmp_path.stat().st_size
+                    if wav_size <= 44:
+                        raise RuntimeError(
+                            f"WAV file is empty (size={wav_size}, chunks={chunks}, bytes={len(pcm_bytes)})"
+                        )
                     asset = await media.save_audio(str(tmp_path), file_name=fname)
                     session.track_owned(asset.id)
                     tmp_path.unlink(missing_ok=True)
-                    rec_status.value = f"Saved to Music: {asset.display_name}"
+                    rec_status.value = (
+                        f"Saved to Music: {asset.display_name} "
+                        f"({chunks} chunks, {len(pcm_bytes)} PCM bytes, {wav_size} WAV bytes)"
+                    )
                     rec_status.color = ft.Colors.GREEN
                     page.show_dialog(
                         ft.SnackBar(content=ft.Text(f"Recording saved to Music/FletMediaLibrary: {asset.display_name}"))

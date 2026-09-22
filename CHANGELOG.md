@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Physical/emulator integration tests for MediaStore, PhotoKit, permissions, delete confirmation
 - Optional resolved original file-path API for in-app playback
 
+## [1.1.2] - 2026-09-22
+
+### Fixed
+- **Demo audio recording**: register the PCM stream handler before recording starts and report chunk/byte diagnostics, ensuring captured audio is written to a non-empty WAV before `save_audio()`.
+
 ## [1.1.1] - 2026-09-22
 
 ### Fixed
