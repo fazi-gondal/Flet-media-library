@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dart unit tests with mocked `photo_manager`
 - Optional resolved file-path API for in-app playback of library assets
 
+## [1.0.2] - 2026-09-22
+
+### Documentation & Architecture
+- Documented public storage destination directories: photos to `DCIM/` & `Pictures/`, videos to `Movies/` & `DCIM/`, and audio directly to `Music/`.
+- Clarified native architecture: `save_audio`, `rename_asset`, and `move_asset` are powered by dedicated custom Android Kotlin implementations (`FletMediaLibraryPlugin.kt`) because upstream `photo_manager` lacks these capabilities.
+- Synchronized updated documentation, cookbooks, and storage architecture matrix to PyPI.
+
 ## [1.0.1] - 2026-09-21
 
 ### Documentation & Packaging
