@@ -187,7 +187,8 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                         album="Music/Recordings",
                     )
                     session.track_owned(asset.id)
-                    rec_status.value = f"Saved: {asset.display_name}"
+                    tmp_path.unlink(missing_ok=True)
+                    rec_status.value = f"Saved to Music: {asset.display_name}"
                     rec_status.color = ft.Colors.GREEN
                     page.show_dialog(
                         ft.SnackBar(content=ft.Text(f"Recording saved to Music/Recordings: {asset.display_name}"))
@@ -359,6 +360,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
             except Exception:  # noqa: BLE001
                 pass
             preview_info.value = f"Saved Image: {asset.display_name}\nID: {asset.id}\nSize: {path.stat().st_size} bytes"
+            path.unlink(missing_ok=True)
             status.value = f"Photo saved to {album or 'gallery'}: {asset.id}"
             status.color = ft.Colors.GREEN
             page.show_dialog(ft.SnackBar(content=ft.Text(f"Photo saved: {asset.display_name}")))
@@ -398,6 +400,7 @@ def build_capture(page: ft.Page, session: DemoSession) -> ft.Control:
                 album = album_field.value or None
                 asset = await media.save_video(str(path), file_name=path.name, album=album)
                 session.track_owned(asset.id)
+                path.unlink(missing_ok=True)
                 preview_info.value = f"Saved Video: {asset.display_name}\nID: {asset.id}"
                 status.value = f"Video saved to {album or 'gallery'}: {asset.id}"
                 status.color = ft.Colors.GREEN
