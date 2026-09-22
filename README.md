@@ -145,7 +145,7 @@ uv add flet-media-library
 [project]
 dependencies = [
     "flet>=1.0.0",
-    "flet-media-library>=1.0.1",
+    "flet-media-library>=1.1.2",
 ]
 ```
 
