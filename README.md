@@ -778,6 +778,13 @@ To explore and test on a physical device or emulator, see the full-featured test
 
 ---
 
+## Related Project
+
+For a lightweight Android-only solution focused on saving, listing, deleting, and scanning videos through `MediaStore`, see **[flet-media-scanner](https://github.com/fazi-gondal/flet-media-scanner)**.
+
+`flet-media-library` provides a broader cross-platform media library API for Android and iOS, while `flet-media-scanner` is a smaller Android-focused extension built directly around the native `MediaStore` APIs.
+
+
 ## Credits & Acknowledgments
 
 - **Creator & Lead Maintainer**: [Fazi Gondal](https://github.com/fazi-gondal) ([@fazi-gondal](https://github.com/fazi-gondal))
