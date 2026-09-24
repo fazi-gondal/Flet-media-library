@@ -183,6 +183,8 @@ uv run flet build apk \
 The compiled APK will be output to:
 `build/apk/Media Library Demo-arm64-v8a-release.apk`
 
+👉 **[Download the latest Demo APK from GitHub Releases](https://github.com/fazi-gondal/Flet-media-library/releases)**
+
 ### Automated CI / GitHub Actions
 
 This repository includes an automated workflow in [`.github/workflows/build-demo-apk.yml`](../../.github/workflows/build-demo-apk.yml) with network retry handling:
